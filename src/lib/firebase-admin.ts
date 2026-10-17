@@ -1,3 +1,4 @@
+
 import "server-only";
 
 import {
@@ -9,11 +10,18 @@ import {
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
-let adminAuth: ReturnType<typeof getAuth> | null = null;
-let adminDb: ReturnType<typeof getFirestore> | null = null;
+const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
-try {
-  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+const projectId = process.env.FIREBASE_PROJECT_ID;
+const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+
+function getAdminApp() {
+  const existingApps = getApps();
+
+  if (existingApps.length > 0) {
+    return getApp();
+  }
 
   if (serviceAccountJson) {
     let serviceAccount: {
@@ -25,53 +33,49 @@ try {
     try {
       serviceAccount = JSON.parse(serviceAccountJson);
     } catch {
-      throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON.");
+      throw new Error(
+        "FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON."
+      );
     }
 
     if (
-      serviceAccount.project_id &&
-      serviceAccount.client_email &&
-      serviceAccount.private_key
+      !serviceAccount.project_id ||
+      !serviceAccount.client_email ||
+      !serviceAccount.private_key
     ) {
-      const app =
-        getApps().length > 0
-          ? getApp()
-          : initializeApp({
-              credential: cert({
-                projectId: serviceAccount.project_id,
-                clientEmail: serviceAccount.client_email,
-                privateKey: serviceAccount.private_key.replace(/\\n/g, "\n"),
-              }),
-storageBucket: 'accounting-software-505d5.firebasestorage.app',
-          });
-
-      adminAuth = getAuth(app);
-      adminDb = getFirestore(app);
+      throw new Error(
+        "Firebase service account JSON is missing required fields."
+      );
     }
-  } else if (
-    process.env.FIREBASE_PROJECT_ID &&
-    process.env.FIREBASE_CLIENT_EMAIL &&
-    process.env.FIREBASE_PRIVATE_KEY
-  ) {
-    const serviceAccount = {
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    };
 
-    const app =
-      getApps().length > 0
-        ? getApp()
-        : initializeApp({
-            credential: cert(serviceAccount),
-storageBucket: 'accounting-software-505d5.firebasestorage.app',
-          });
-
-    adminAuth = getAuth(app);
-    adminDb = getFirestore(app);
+    return initializeApp({
+      credential: cert({
+        projectId: serviceAccount.project_id,
+        clientEmail: serviceAccount.client_email,
+        privateKey: serviceAccount.private_key.replace(/\\n/g, "\n"),
+      }),
+      storageBucket: "accounting-software-505d5.firebasestorage.app",
+    });
   }
-} catch (error) {
-  console.warn("Firebase Admin SDK initialization failed:", error);
+
+  if (!projectId || !clientEmail || !privateKey) {
+    throw new Error(
+      "Missing Firebase Admin credentials. Configure " +
+      "FIREBASE_SERVICE_ACCOUNT_JSON or all three split credentials."
+    );
+  }
+
+  return initializeApp({
+    credential: cert({
+      projectId,
+      clientEmail,
+      privateKey: privateKey.replace(/\\n/g, "\n"),
+    }),
+    storageBucket: "accounting-software-505d5.firebasestorage.app",
+  });
 }
 
-export { adminAuth, adminDb };
+const adminApp = getAdminApp();
+
+export const adminAuth = getAuth(adminApp);
+export const adminDb = getFirestore(adminApp);
