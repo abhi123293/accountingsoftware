@@ -1,7 +1,7 @@
 
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "ledgerflow-accounting-software",
+  "name": "accountingsoftware",
   "main": ".open-next/worker.js",
   "upload_source_maps": true,
   "compatibility_date": "2026-10-16",
