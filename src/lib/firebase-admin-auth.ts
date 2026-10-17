@@ -133,14 +133,38 @@ function getAdminAuth(): Promise<AdminAuth> {
   return initialization;
 }
 
+function isInvalidSessionCookieError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return false;
+  }
+
+  const code = error.code;
+  return (
+    typeof code === "string" &&
+    [
+      "auth/argument-error",
+      "auth/invalid-session-cookie",
+      "auth/session-cookie-expired",
+      "auth/session-cookie-revoked",
+      "auth/user-disabled",
+      "auth/user-not-found",
+    ].includes(code)
+  );
+}
+
 export const adminAuth = {
   verifySessionCookie(
     sessionCookie: string,
     checkRevoked?: boolean
   ): ReturnType<AdminAuth["verifySessionCookie"]> {
-    return getAdminAuth().then((auth) =>
-      auth.verifySessionCookie(sessionCookie, checkRevoked)
-    );
+    return getAdminAuth()
+      .then((auth) => auth.verifySessionCookie(sessionCookie, checkRevoked))
+      .catch((error: unknown) => {
+        if (isInvalidSessionCookieError(error)) {
+          throw new Error("UNAUTHORIZED");
+        }
+        throw error;
+      });
   },
 
   verifyIdToken(
