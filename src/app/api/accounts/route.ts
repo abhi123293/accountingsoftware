@@ -1,7 +1,7 @@
-
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin-auth";
+import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
 
@@ -15,40 +15,27 @@ const ACCOUNT_TYPES = [
 
 type AccountType = (typeof ACCOUNT_TYPES)[number];
 
-async function verifyAdminSession() {
-  if (!adminAuth) {
-    throw new Error("ADMIN_NOT_CONFIGURED");
-  }
-
+async function verifyAdmin() {
   const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("__session")?.value;
+  const session = cookieStore.get("__session")?.value;
 
-  if (!sessionCookie) {
-    throw new Error("UNAUTHORIZED");
-  }
+  if (!session) throw new Error("UNAUTHORIZED");
 
-  // Verify as session cookie (created by /api/auth/session)
-  const decoded = await adminAuth.verifySessionCookie(
-    sessionCookie,
-    true
-  );
-
-  if (!isAdminUid(decoded.uid)) {
-    throw new Error("FORBIDDEN");
-  }
-
-  return decoded;
+  const decoded = await adminAuth.verifySessionCookie(session, true);
+  if (!isAdminUid(decoded.uid)) throw new Error("FORBIDDEN");
 }
 
-function errorResponse(error: unknown) {
-  if (error instanceof Error && error.message === "UNAUTHORIZED") {
+function handleError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+
+  if (message === "UNAUTHORIZED") {
     return NextResponse.json(
       { error: "Please sign in to continue." },
       { status: 401 }
     );
   }
 
-  if (error instanceof Error && error.message === "FORBIDDEN") {
+  if (message === "FORBIDDEN") {
     return NextResponse.json(
       { error: "Administrator access required." },
       { status: 403 }
@@ -56,7 +43,6 @@ function errorResponse(error: unknown) {
   }
 
   console.error("Accounts API error:", error);
-
   return NextResponse.json(
     { error: "Unable to process accounts request." },
     { status: 500 }
@@ -65,20 +51,11 @@ function errorResponse(error: unknown) {
 
 export async function GET() {
   try {
-    await verifyAdminSession();
+    await verifyAdmin();
 
-    if (!adminDb) {
-      return NextResponse.json(
-        { error: "Firebase Admin not configured." },
-        { status: 503 }
-      );
-    }
-
-    const snapshot = await adminDb.collection("accounts").get();
-
+    const snapshot = await firestore.collection("accounts").get();
     const accounts = snapshot.docs.map((document) => {
-      const data = document.data();
-
+      const data = document.data() ?? {};
       return {
         id: document.id,
         code: String(data.code ?? ""),
@@ -89,31 +66,28 @@ export async function GET() {
     });
 
     accounts.sort((a, b) => a.code.localeCompare(b.code));
-
     return NextResponse.json({ accounts });
   } catch (error) {
-    return errorResponse(error);
+    return handleError(error);
   }
 }
 
 export async function POST(request: Request) {
   try {
-    await verifyAdminSession();
+    await verifyAdmin();
+    const body: unknown = await request.json().catch(() => null);
 
-    if (!adminDb) {
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
       return NextResponse.json(
-        { error: "Firebase Admin not configured." },
-        { status: 503 }
+        { error: "Invalid account details." },
+        { status: 400 }
       );
     }
 
-    const body = await request.json();
-
-    const code =
-      typeof body.code === "string" ? body.code.trim() : "";
-    const name =
-      typeof body.name === "string" ? body.name.trim() : "";
-    const type = body.type as AccountType;
+    const input = body as Record<string, unknown>;
+    const code = typeof input.code === "string" ? input.code.trim() : "";
+    const name = typeof input.name === "string" ? input.name.trim() : "";
+    const type = input.type;
 
     if (!code || !name || code.length > 30 || name.length > 150) {
       return NextResponse.json(
@@ -122,51 +96,47 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!ACCOUNT_TYPES.includes(type)) {
+    if (
+      typeof type !== "string" ||
+      !(ACCOUNT_TYPES as readonly string[]).includes(type)
+    ) {
       return NextResponse.json(
         { error: "Select a valid account type." },
         { status: 400 }
       );
     }
 
-    const accountsRef = adminDb.collection("accounts");
+    const accounts = firestore.collection("accounts");
+    const document = accounts.doc();
+    const account = {
+      code,
+      name,
+      type: type as AccountType,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    };
 
-    const account = await adminDb.runTransaction(async (transaction) => {
+    await firestore.runTransaction(async (transaction) => {
       const existing = await transaction.get(
-        accountsRef.where("code", "==", code)
+        accounts.where("code", "==", code)
       );
 
-      if (!existing.empty) {
-        throw new Error("DUPLICATE_ACCOUNT_CODE");
-      }
-
-      const documentRef = accountsRef.doc();
-
-      const newAccount = {
-        code,
-        name,
-        type,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-      };
-
-      transaction.set(documentRef, newAccount);
-
-      return {
-        id: documentRef.id,
-        ...newAccount,
-      };
+      if (!existing.empty) throw new Error("DUPLICATE_ACCOUNT_CODE");
+      transaction.set(document, account);
     });
 
     await createNotification({
-  title: "Account created",
-  message: `${account.code} — ${account.name} was added to the chart of accounts.`,
-  type: "account_created",
-  link: "/accounts",
-  entityId: account.id,
-});
+      title: "Account created",
+      message: `${account.code} — ${account.name} was added to the chart of accounts.`,
+      type: "account_created",
+      link: "/accounts",
+      entityId: document.id,
+    });
 
-    return NextResponse.json({ account }, { status: 201 });
+    return NextResponse.json(
+      { account: { id: document.id, ...account } },
+      { status: 201 }
+    );
   } catch (error) {
     if (
       error instanceof Error &&
@@ -177,7 +147,6 @@ export async function POST(request: Request) {
         { status: 409 }
       );
     }
-
-    return errorResponse(error);
+    return handleError(error);
   }
 }

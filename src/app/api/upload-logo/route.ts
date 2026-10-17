@@ -1,7 +1,7 @@
-import { getStorage } from "firebase-admin/storage";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { adminAuth } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin-auth";
+import { uploadObject } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 
 async function verifyAdmin() {
@@ -49,22 +49,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const bucket = getStorage().bucket();
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const fileName = `business/logo/${Date.now()}-${safeName}`;
-    const blob = bucket.file(fileName);
-
-    const arrayBuffer = await file.arrayBuffer();
-
-    await blob.save(Buffer.from(arrayBuffer), {
-      contentType: file.type,
-      metadata: { cacheControl: "public, max-age=31536000" },
-    });
-
-    const [url] = await blob.getSignedUrl({
-      action: "read",
-      expires: "03-09-2491",
-    });
+    const downloadToken = crypto.randomUUID();
+    await uploadObject(
+      "accounting-software-505d5.firebasestorage.app",
+      fileName,
+      file.type,
+      await file.arrayBuffer(),
+      downloadToken
+    );
+    const url =
+      `https://firebasestorage.googleapis.com/v0/b/accounting-software-505d5.firebasestorage.app/o/` +
+      `${encodeURIComponent(fileName)}?alt=media&token=${downloadToken}`;
 
     return NextResponse.json({ downloadURL: url, path: fileName });
   } catch (error) {

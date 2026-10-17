@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin-auth";
+import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 
 const RECORD_COLLECTIONS = ["accounts", "contacts", "invoices", "transactions"] as const;
@@ -57,14 +58,7 @@ export async function GET() {
   try {
     await verifyAdmin();
 
-    if (!adminDb) {
-      return NextResponse.json(
-        { error: "Firebase Admin not configured." },
-        { status: 503 }
-      );
-    }
-
-    const db = adminDb;
+    const db = firestore;
 
     const [accountsSnap, contactsSnap, invoicesSnap, transactionsSnap] =
       await Promise.all([
@@ -107,14 +101,7 @@ export async function POST(request: Request) {
   try {
     await verifyAdmin();
 
-    if (!adminDb) {
-      return NextResponse.json(
-        { error: "Firebase Admin not configured." },
-        { status: 503 }
-      );
-    }
-
-    const db = adminDb;
+    const db = firestore;
     const body = await request.json().catch(() => null);
 
     if (!isPlainObject(body)) {
@@ -225,14 +212,7 @@ export async function DELETE() {
   try {
     await verifyAdmin();
 
-    if (!adminDb) {
-      return NextResponse.json(
-        { error: "Firebase Admin not configured." },
-        { status: 503 }
-      );
-    }
-
-    const db = adminDb;
+    const db = firestore;
     const writer = db.bulkWriter();
     let deleted = 0;
 

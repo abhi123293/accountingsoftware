@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
-import { adminAuth } from "@/lib/firebase-admin";
+import {
+  adminAuth,
+  AdminAuthConfigurationError,
+} from "@/lib/firebase-admin-auth";
 import { isAdminUid } from "@/lib/admin-uid";
 
 const SESSION_DURATION = 5 * 24 * 60 * 60 * 1000;
 
 export async function POST(request: Request) {
   try {
+    console.log("Session service status:", {
+  adminAuthAvailable: Boolean(adminAuth),
+  nodeEnv: process.env.NODE_ENV,
+});
     if (!adminAuth) {
       return NextResponse.json(
         { error: "Firebase Admin not configured" },
@@ -49,7 +56,16 @@ export async function POST(request: Request) {
     });
 
     return response;
-  } catch {
+  } catch (error) {
+    if (error instanceof AdminAuthConfigurationError) {
+      console.error("Session configuration error:", error.message);
+      return NextResponse.json(
+        { error: "Authentication service is not configured." },
+        { status: 503 }
+      );
+    }
+
+    console.error("Session creation failed:", error);
     return NextResponse.json(
       { error: "Unable to create session" },
       { status: 401 }

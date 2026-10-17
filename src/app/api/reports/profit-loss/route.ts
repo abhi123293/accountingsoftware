@@ -1,7 +1,8 @@
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin-auth";
+import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 
 type Account = {
@@ -32,13 +33,6 @@ function isValidDate(value: string | null): value is string {
 
 export async function GET(request: Request) {
   try {
-    if (!adminAuth || !adminDb) {
-      return NextResponse.json(
-        { error: "Firebase Admin is not configured." },
-        { status: 503 }
-      );
-    }
-
     // Verify the administrator session.
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get("__session")?.value;
@@ -84,8 +78,8 @@ export async function GET(request: Request) {
     // Read accounts and transactions from Firestore.
     const [accountsSnapshot, transactionsSnapshot] =
       await Promise.all([
-        adminDb.collection("accounts").get(),
-        adminDb.collection("transactions").get(),
+        firestore.collection("accounts").get(),
+        firestore.collection("transactions").get(),
       ]);
 
     const accounts = new Map<string, Account>();

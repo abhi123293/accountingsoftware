@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin-auth";
+import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
 
@@ -73,10 +74,6 @@ export async function PATCH(
   try {
     await verifyAdmin();
 
-    if (!adminDb) {
-      throw new Error("FIREBASE_DB_NOT_INITIALIZED");
-    }
-
     const { id } = await params;
     const body = await request.json();
 
@@ -134,7 +131,7 @@ export async function PATCH(
       );
     }
 
-    const contactRef = adminDb.collection("contacts").doc(id);
+    const contactRef = firestore.collection("contacts").doc(id);
     const contactDoc = await contactRef.get();
 
     if (!contactDoc.exists) {
@@ -181,10 +178,6 @@ export async function DELETE(
   try {
     await verifyAdmin();
 
-    if (!adminDb) {
-      throw new Error("FIREBASE_DB_NOT_INITIALIZED");
-    }
-
     const { id } = await params;
 
     if (!id) {
@@ -194,7 +187,7 @@ export async function DELETE(
       );
     }
 
-    const contactRef = adminDb.collection("contacts").doc(id);
+    const contactRef = firestore.collection("contacts").doc(id);
     const contactDoc = await contactRef.get();
 
     if (!contactDoc.exists) {
@@ -206,19 +199,21 @@ export async function DELETE(
 
     const deletedName = String(contactDoc.data()?.name ?? "Contact");
 
-    await contactRef.delete();
-
-    return NextResponse.json({
-      message: "Contact deleted successfully.",
+    const notificationRef = firestore.collection("notifications").doc();
+    const batch = firestore.batch();
+    batch.delete(contactRef);
+    batch.set(notificationRef, {
+      title: "Contact deleted",
+      message: `${deletedName} was deleted.`,
+      type: "contact_deleted",
+      link: "/contacts",
+      entityId: id,
+      isRead: false,
+      createdAt: new Date().toISOString(),
     });
+    await batch.commit();
 
-    await createNotification({
-  title: "Contact deleted",
-  message: `${deletedName} was deleted.`,
-  type: "contact_deleted",
-  link: "/contacts",
-  entityId: id,
-});
+    return NextResponse.json({ message: "Contact deleted successfully." });
   } catch (error) {
     return handleError(error);
   }

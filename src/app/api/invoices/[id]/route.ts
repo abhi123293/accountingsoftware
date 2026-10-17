@@ -1,7 +1,8 @@
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin-auth";
+import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
 
@@ -14,10 +15,6 @@ async function verifyAdmin() {
   const session = cookieStore.get("__session")?.value;
 
   if (!session) throw new Error("UNAUTHORIZED");
-
- if (!adminAuth || !adminDb) {
-  throw new Error("FIREBASE_ADMIN_NOT_INITIALIZED");
-}
 
 const decoded = await adminAuth.verifySessionCookie(session, true);
 
@@ -36,13 +33,6 @@ export async function PATCH(
     const { id } = await params;
     const body = await request.json();
 
-    if (!adminDb) {
-  return NextResponse.json(
-    { error: "Firebase Admin database is not initialized." },
-    { status: 500 }
-  );
-}
-
     if (body.status !== "sent") {
       return NextResponse.json(
         { error: "Only issuing a draft invoice is supported." },
@@ -50,7 +40,7 @@ export async function PATCH(
       );
     }
 
-    const invoiceRef = adminDb.collection("invoices").doc(id);
+    const invoiceRef = firestore.collection("invoices").doc(id);
     const invoice = await invoiceRef.get();
 
     if (!invoice.exists) {

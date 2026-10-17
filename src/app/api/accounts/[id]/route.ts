@@ -1,7 +1,8 @@
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin-auth";
+import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
 
@@ -21,10 +22,6 @@ type RouteContext = {
 
 
 async function verifyAdmin() {
-  if (!adminAuth || !adminDb) {
-    throw new Error("ADMIN_NOT_CONFIGURED");
-  }
-
   const cookieStore = await cookies();
   const session = cookieStore.get("__session")?.value;
 
@@ -73,14 +70,10 @@ function handleError(error: unknown) {
 
 
 async function isAccountUsed(accountId: string) {
-  if (!adminDb) {
-    throw new Error("ADMIN_NOT_CONFIGURED");
-  }
-
-  const snapshot = await adminDb.collection("transactions").get();
+  const snapshot = await firestore.collection("transactions").get();
 
   return snapshot.docs.some((document) => {
-    const data = document.data();
+  const data = document.data() ?? {};
     const lines = Array.isArray(data.lines) ? data.lines : [];
 
     return lines.some(
@@ -97,9 +90,8 @@ export async function PATCH(
 ) {
   try {
     await verifyAdmin();
-if (!adminDb) {throw new Error("ADMIN_NOT_CONFIGURED");}
-    const { id } = await context.params;
-    const accountRef = adminDb.collection("accounts").doc(id);
+const { id } = await context.params;
+const accountRef = firestore.collection("accounts").doc(id);
     const accountSnapshot = await accountRef.get();
 
     if (!accountSnapshot.exists) {
@@ -110,7 +102,7 @@ if (!adminDb) {throw new Error("ADMIN_NOT_CONFIGURED");}
     }
 
     const body = await request.json();
-    const current = accountSnapshot.data()!;
+    const current = (accountSnapshot.data() ?? {}) as Record<string, unknown>;
 
     const code =
       typeof body.code === "string" ? body.code.trim() : "";
@@ -131,7 +123,7 @@ if (!adminDb) {throw new Error("ADMIN_NOT_CONFIGURED");}
       );
     }
 
-    const accountsRef = adminDb.collection("accounts");
+    const accountsRef = firestore.collection("accounts");
     const duplicate = await accountsRef
       .where("code", "==", code)
       .get();
@@ -185,9 +177,8 @@ export async function DELETE(
 ) {
   try {
     await verifyAdmin();
-     if (!adminDb) {throw new Error("ADMIN_NOT_CONFIGURED");}
     const { id } = await context.params;
-    const accountRef = adminDb.collection("accounts").doc(id);
+    const accountRef = firestore.collection("accounts").doc(id);
     const accountSnapshot = await accountRef.get();
 
     if (!accountSnapshot.exists) {

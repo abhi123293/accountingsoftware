@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin-auth";
+import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
 
@@ -13,10 +14,6 @@ async function verifyAdmin() {
   const session = cookieStore.get("__session")?.value;
 
   if (!session) throw new Error("UNAUTHORIZED");
-
-if (!adminAuth || !adminDb) {
-  throw new Error("FIREBASE_ADMIN_NOT_INITIALIZED");
-}
 
 const decoded = await adminAuth.verifySessionCookie(session, true);
 
@@ -32,9 +29,6 @@ export async function POST(
   try {
     await verifyAdmin();
 
-    if (!adminAuth || !adminDb) {
-  throw new Error("FIREBASE_ADMIN_NOT_INITIALIZED");
-}
     const { id } = await params;
     const body = await request.json();
 
@@ -68,21 +62,23 @@ export async function POST(
       );
     }
 
-    const invoiceRef = adminDb.collection("invoices").doc(id);
+    const invoiceRef = firestore.collection("invoices").doc(id);
     const paymentRef = invoiceRef.collection("payments").doc();
 
-    const result = await adminDb.runTransaction(async (transaction) => {
+    const result = await firestore.runTransaction(async (transaction) => {
       const invoiceDoc = await transaction.get(invoiceRef);
 
       if (!invoiceDoc.exists) throw new Error("INVOICE_NOT_FOUND");
 
-      const invoice = invoiceDoc.data()!;
+      const invoice = (invoiceDoc.data() ?? {}) as Record<string, unknown>;
+      const invoiceStatus = typeof invoice.status === "string" ? invoice.status : "draft";
+      const invoiceDueDate = typeof invoice.dueDate === "string" ? invoice.dueDate : "";
 
-      if (invoice.status === "draft") {
+      if (invoiceStatus === "draft") {
         throw new Error("ISSUE_INVOICE_FIRST");
       }
 
-      if (invoice.status === "paid") {
+      if (invoiceStatus === "paid") {
         throw new Error("INVOICE_ALREADY_PAID");
       }
 
@@ -91,12 +87,14 @@ export async function POST(
       );
 
       const amountPaidCents = paymentsSnapshot.docs.reduce(
-        (sum, doc) =>
-          sum + Math.round(Number(doc.data().amount ?? 0) * 100),
+        (sum, doc) => {
+          const payment = (doc.data() ?? {}) as Record<string, unknown>;
+          return sum + Math.round(Number(payment.amount ?? 0) * 100);
+        },
         0
       );
 
-      const totalCents = Math.round(Number(invoice.total) * 100);
+      const totalCents = Math.round(Number(invoice.total ?? 0) * 100);
       const paymentCents = Math.round(amount * 100);
       const balanceCents = totalCents - amountPaidCents;
 
@@ -119,7 +117,7 @@ export async function POST(
       const status =
         newBalanceCents === 0
           ? "paid"
-          : invoice.dueDate < today
+          : invoiceDueDate < today
             ? "overdue"
             : "partially_paid";
 
@@ -218,4 +216,3 @@ export async function POST(
     );
   }
 }
-

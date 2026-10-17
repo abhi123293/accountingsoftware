@@ -1,7 +1,7 @@
 
 import "server-only";
 
-import { adminDb } from "@/lib/firebase-admin";
+import { firestore } from "@/lib/firestore-rest";
 
 export type NotificationInput = {
   title: string;
@@ -15,14 +15,7 @@ export async function createNotification(
   input: NotificationInput
 ): Promise<void> {
   try {
-    if (!adminDb) {
-      console.error(
-        "Notification was not saved: Firebase Admin database is unavailable."
-      );
-      return;
-    }
-
-    await adminDb.collection("notifications").add({
+    await firestore.collection("notifications").add({
       title: input.title,
       message: input.message,
       type: input.type,

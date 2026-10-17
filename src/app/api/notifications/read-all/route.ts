@@ -1,7 +1,8 @@
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin-auth";
+import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 
 async function verifyAdmin() {
@@ -21,21 +22,14 @@ export async function POST() {
   try {
     await verifyAdmin();
 
-    if (!adminDb) {
-      return NextResponse.json(
-        { error: "Database service is not configured." },
-        { status: 503 }
-      );
-    }
-
-    const snapshot = await adminDb
+    const snapshot = await firestore
       .collection("notifications")
       .where("isRead", "==", false)
       .limit(450)
       .get();
 
     if (!snapshot.empty) {
-      const batch = adminDb.batch();
+      const batch = firestore.batch();
 
       snapshot.docs.forEach((doc) => {
         batch.update(doc.ref, { isRead: true });

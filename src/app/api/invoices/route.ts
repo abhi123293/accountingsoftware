@@ -1,7 +1,8 @@
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin-auth";
+import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
 
@@ -52,14 +53,7 @@ export async function GET() {
   try {
     await verifyAdmin();
 
-    if (!adminDb) {
-      return NextResponse.json(
-        { error: "Firebase Admin not configured." },
-        { status: 503 }
-      );
-    }
-
-    const snapshot = await adminDb.collection("invoices").get();
+    const snapshot = await firestore.collection("invoices").get();
 
     const invoices = snapshot.docs.map((doc) => {
       const data = doc.data();
@@ -95,13 +89,6 @@ balanceDue: data.balanceDue ?? data.total ?? 0,
 export async function POST(request: Request) {
   try {
     await verifyAdmin();
-
-    if (!adminDb) {
-      return NextResponse.json(
-        { error: "Firebase Admin not configured." },
-        { status: 503 }
-      );
-    }
 
     const body = await request.json();
 
@@ -143,7 +130,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const customerDoc = await adminDb
+    const customerDoc = await firestore
       .collection("contacts")
       .doc(customerId)
       .get();
@@ -242,7 +229,7 @@ export async function POST(request: Request) {
       createdAt: new Date().toISOString(),
     };
 
-    const document = await adminDb
+    const document = await firestore
       .collection("invoices")
       .add(invoiceData);
       
@@ -267,5 +254,4 @@ export async function POST(request: Request) {
     return handleError(error);
   }
 }
-
 

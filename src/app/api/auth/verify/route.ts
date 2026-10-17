@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminAuth } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin-auth";
 import { isAdminUid } from "@/lib/admin-uid";
 
 export async function POST(request: Request) {

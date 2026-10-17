@@ -1,7 +1,8 @@
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin-auth";
+import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
 
@@ -54,17 +55,10 @@ export async function GET() {
   try {
     await verifyAdmin();
 
-    if (!adminDb) {
-      return NextResponse.json(
-        { error: "Firebase Admin not configured." },
-        { status: 503 }
-      );
-    }
-
-    const snapshot = await adminDb.collection("contacts").get();
+    const snapshot = await firestore.collection("contacts").get();
 
     const contacts = snapshot.docs.map((doc) => {
-      const data = doc.data();
+      const data = doc.data() ?? {};
 
       return {
         id: doc.id,
@@ -86,13 +80,6 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     await verifyAdmin();
-
-    if (!adminDb) {
-      return NextResponse.json(
-        { error: "Firebase Admin not configured." },
-        { status: 503 }
-      );
-    }
 
     const body = await request.json();
 
@@ -153,17 +140,20 @@ export async function POST(request: Request) {
       createdAt: new Date().toISOString(),
     };
 
-    const document = await adminDb
-      .collection("contacts")
-      .add(contactData);
-
-      await createNotification({
-  title: "Contact created",
-  message: `${name} was added as a ${type}.`,
-  type: "contact_created",
-  link: "/contacts",
-  entityId: document.id,
-});
+    const document = firestore.collection("contacts").doc();
+    const notification = firestore.collection("notifications").doc();
+    const batch = firestore.batch();
+    batch.set(document, contactData);
+    batch.set(notification, {
+      title: "Contact created",
+      message: `${name} was added as a ${type}.`,
+      type: "contact_created",
+      link: "/contacts",
+      entityId: document.id,
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    });
+    await batch.commit();
 
     return NextResponse.json(
       {

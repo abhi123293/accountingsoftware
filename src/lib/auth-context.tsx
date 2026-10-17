@@ -38,13 +38,11 @@ async function setSessionCookie(token: string) {
     });
 
     if (!response.ok) {
-      // Fallback to client-side cookie if server fails
-      document.cookie = `__session=${token}; path=/; max-age=${60 * 60 * 24 * 5}; SameSite=Lax`;
-      return;
+      throw new Error(`Session service returned HTTP ${response.status}.`);
     }
-  } catch {
-    // Fallback to client-side cookie on network error
-    document.cookie = `__session=${token}; path=/; max-age=${60 * 60 * 24 * 5}; SameSite=Lax`;
+  } catch (error) {
+    console.error("Secure session cookie creation failed:", error);
+    throw new Error("Unable to establish a secure session.");
   }
 }
 

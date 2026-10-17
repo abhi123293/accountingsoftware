@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin-auth";
+import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 
 const ALLOWED_TAXES = ["CGST", "SGST", "IGST", "VAT", "SERVICE_TAX"] as const;
@@ -50,8 +51,7 @@ function handleError(error: unknown) {
 }
 
 const settingsDoc = () => {
-  if (!adminDb) return null;
-  return adminDb.collection("settings").doc("tax");
+  return firestore.collection("settings").doc("tax");
 };
 
 export async function GET() {
@@ -59,13 +59,6 @@ export async function GET() {
     await verifyAdmin();
 
     const ref = settingsDoc();
-    if (!ref) {
-      return NextResponse.json(
-        { error: "Firebase Admin not configured." },
-        { status: 503 }
-      );
-    }
-
     const snapshot = await ref.get();
 
     return NextResponse.json({
@@ -81,13 +74,6 @@ export async function POST(request: Request) {
     await verifyAdmin();
 
     const ref = settingsDoc();
-    if (!ref) {
-      return NextResponse.json(
-        { error: "Firebase Admin not configured." },
-        { status: 503 }
-      );
-    }
-
     const body = await request.json().catch(() => null);
     if (typeof body !== "object" || body === null || Array.isArray(body)) {
       return NextResponse.json(

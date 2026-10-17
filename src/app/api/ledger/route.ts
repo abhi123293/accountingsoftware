@@ -1,7 +1,8 @@
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminAuth } from "@/lib/firebase-admin-auth";
+import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
 
@@ -54,14 +55,7 @@ export async function GET() {
   try {
     await verifyAdmin();
 
-    if (!adminDb) {
-      return NextResponse.json(
-        { error: "Firebase Admin not configured." },
-        { status: 503 }
-      );
-    }
-
-    const snapshot = await adminDb
+    const snapshot = await firestore
       .collection("transactions")
       .orderBy("createdAt", "desc")
       .limit(100)
@@ -81,13 +75,6 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     await verifyAdmin();
-
-    if (!adminDb) {
-      return NextResponse.json(
-        { error: "Firebase Admin not configured." },
-        { status: 503 }
-      );
-    }
 
     const body = await request.json();
     const date = typeof body.date === "string" ? body.date : "";
@@ -157,26 +144,27 @@ export async function POST(request: Request) {
       );
     }
 
-    const accountsRef = adminDb.collection("accounts");
+    const accountsRef = firestore.collection("accounts");
     const accountSnapshots = await Promise.all(
       [...new Set(normalizedLines.map((line) => line.accountId))].map(
         (accountId) => accountsRef.doc(accountId).get()
       )
     );
 
-    const accountMap = new Map(
+    const accountMap = new Map<string, Record<string, unknown>>(
       accountSnapshots
         .filter((snapshot) => snapshot.exists)
-        .map((snapshot) => [snapshot.id, snapshot.data()])
+        .map((snapshot) => [snapshot.id, (snapshot.data() ?? {}) as Record<string, unknown>])
     );
 
     for (const line of normalizedLines) {
       const account = accountMap.get(line.accountId);
+      const accountType = typeof account?.type === "string" ? account.type : "";
 
       if (
         !account ||
         account.isActive === false ||
-        !ACCOUNT_TYPES.includes(account.type)
+        !ACCOUNT_TYPES.includes(accountType as (typeof ACCOUNT_TYPES)[number])
       ) {
         return NextResponse.json(
           { error: `Invalid or inactive account: ${line.accountId}` },
@@ -195,7 +183,7 @@ export async function POST(request: Request) {
       createdAt: new Date().toISOString(),
     };
 
-    const document = await adminDb
+    const document = await firestore
       .collection("transactions")
       .add(entry);
 
