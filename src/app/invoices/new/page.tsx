@@ -181,12 +181,16 @@ export default function NewInvoicePage() {
     );
   }
 
-  return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <Sidebar />
 
-      <main className="min-w-0 flex-1">
-        <Header />
+return (
+  <div className="flex min-h-screen w-full min-w-0 bg-background text-foreground">
+    <div className="hidden shrink-0 md:block">
+      <Sidebar />
+    </div>
+
+    <main className="min-w-0 flex-1">
+      <Header />
+
 
         <div className="space-y-6 p-4 sm:p-6 lg:p-8">
           <button
