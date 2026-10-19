@@ -46,3 +46,4 @@ export const app = getApps().length
   : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
+console.log("Active Firebase project:", auth.app.options.projectId);
