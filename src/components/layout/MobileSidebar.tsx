@@ -183,7 +183,7 @@ export default function MobileSidebar() {
 
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">
-                        {user?.displayName ?? "Admin User"}
+                        Admin
                       </p>
 
                       <p className="mt-1 truncate text-xs text-muted-foreground">

@@ -1,8 +1,8 @@
 
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   ArrowLeft,
@@ -48,9 +48,14 @@ const money = (amount: number) =>
 function NewInvoicePage() {
   const { loading: authLoading } = useRequireAuth();
   const router = useRouter();
-const searchParams = useSearchParams();
-const editId = searchParams.get("edit");
+const [editId, setEditId] = useState<string | null>(null);
 const isEditing = Boolean(editId);
+
+useEffect(() => {
+  setEditId(
+    new URLSearchParams(window.location.search).get("edit")
+  );
+}, []);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customersLoading, setCustomersLoading] = useState(true);
   const [customerId, setCustomerId] = useState("");
@@ -545,9 +550,5 @@ return (
   );
 }
 export default function NewInvoicePageWrapper() {
-  return (
-    <Suspense fallback={<div>Loading invoice...</div>}>
-      <NewInvoicePage />
-    </Suspense>
-  );
+  return <NewInvoicePage />;
 }
