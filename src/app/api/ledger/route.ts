@@ -23,7 +23,7 @@ async function verifyAdmin() {
   // Verify as session cookie (created by /api/auth/session)
   const decoded = await adminAuth.verifySessionCookie(session, true);
 
-  if (!isAdminUid(decoded.uid)) {
+  if (!(await isAdminUid(decoded.uid))) {
     throw new Error("FORBIDDEN");
   }
 }

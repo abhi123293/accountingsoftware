@@ -22,7 +22,7 @@ async function verifyAdmin() {
   if (!session) throw new Error("UNAUTHORIZED");
 
   const decoded = await adminAuth.verifySessionCookie(session, true);
-  if (!isAdminUid(decoded.uid)) throw new Error("FORBIDDEN");
+  if (!(await isAdminUid(decoded.uid))) throw new Error("FORBIDDEN");
 }
 
 function handleError(error: unknown) {

@@ -49,7 +49,7 @@ export async function GET(request: Request) {
       true
     );
 
-    if (!isAdminUid(decoded.uid)) {
+    if (!(await isAdminUid(decoded.uid))) {
       return NextResponse.json(
         { error: "Administrator access required." },
         { status: 403 }

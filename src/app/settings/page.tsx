@@ -52,7 +52,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "cn";
 import { useTheme } from "@/components/theme-provider";
-import { storage } from "@/lib/firebase";
+import { storage } from "@/lib/firebase-services";
 import { listAll, ref as storageRef, deleteObject } from "firebase/storage";
 import {
   updatePassword,

@@ -25,7 +25,7 @@ export async function POST(request: Request) {
 
     const decodedToken = await adminAuth.verifyIdToken(token);
 
-    if (!isAdminUid(decodedToken.uid)) {
+    if (!(await isAdminUid(decodedToken.uid))) {
       return NextResponse.json(
         { error: "Admin access required" },
         { status: 403 }

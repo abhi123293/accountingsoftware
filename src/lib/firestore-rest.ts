@@ -77,11 +77,18 @@ function readLocalDevVars(): Record<string, string> {
       let value = trimmed.slice(separatorIndex + 1).trim();
 
       if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
+        const quotedValue = value;
+        try {
+          const decoded: unknown = JSON.parse(quotedValue);
+          value =
+            typeof decoded === "string" ? decoded : quotedValue.slice(1, -1);
+        } catch {
+          value = quotedValue.slice(1, -1);
+        }
       }
 
       if (key && value) {
-        parsed[key] = value.replace(/\\n/g, "\n");
+        parsed[key] = value;
       }
     }
 
@@ -360,7 +367,17 @@ class FirestoreRestError extends Error {
 
 async function firestoreUrl(path: string): Promise<string> {
   const account = await getServiceAccount();
-  return `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(account.project_id)}/databases/(default)/documents/${path}`;
+
+  const baseUrl =
+    `https://firestore.googleapis.com/v1/projects/` +
+    `${encodeURIComponent(account.project_id)}` +
+    `/databases/(default)/documents`;
+
+  // Firestore custom methods use documents:commit,
+  // documents:runQuery, documents:beginTransaction, etc.
+  return path.startsWith(":")
+    ? `${baseUrl}${path}`
+    : `${baseUrl}/${path}`;
 }
 
 async function requestFirestore(
@@ -665,10 +682,17 @@ async function commitWrites(
   transactionId?: string
 ): Promise<unknown> {
   if (writes.length === 0) return null;
+
+  const account = await getServiceAccount();
+
+  const normalizedWrites = writes.map((write) =>
+    normalizeWrite(write, account.project_id)
+  );
+
   return requestFirestore(":commit", {
     method: "POST",
     body: JSON.stringify({
-      writes,
+      writes: normalizedWrites,
       ...(transactionId ? { transaction: transactionId } : {}),
     }),
   });

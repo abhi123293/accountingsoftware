@@ -15,7 +15,7 @@ async function verifyAdmin() {
 
   const decoded = await adminAuth.verifySessionCookie(session, true);
 
-  if (!isAdminUid(decoded.uid)) throw new Error("FORBIDDEN");
+  if (!(await isAdminUid(decoded.uid))) throw new Error("FORBIDDEN");
 }
 
 export async function POST() {

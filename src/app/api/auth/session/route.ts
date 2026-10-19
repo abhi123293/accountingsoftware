@@ -9,10 +9,6 @@ const SESSION_DURATION = 5 * 24 * 60 * 60 * 1000;
 
 export async function POST(request: Request) {
   try {
-    console.log("Session service status:", {
-  adminAuthAvailable: Boolean(adminAuth),
-  nodeEnv: process.env.NODE_ENV,
-});
     if (!adminAuth) {
       return NextResponse.json(
         { error: "Firebase Admin not configured" },
@@ -34,7 +30,7 @@ export async function POST(request: Request) {
 
     const decoded = await adminAuth.verifyIdToken(token, true);
 
-    if (!isAdminUid(decoded.uid)) {
+    if (!(await isAdminUid(decoded.uid))) {
       return NextResponse.json(
         { error: "Admin access required" },
         { status: 403 }
@@ -65,10 +61,33 @@ export async function POST(request: Request) {
       );
     }
 
+    const authCode =
+      typeof error === "object" && error !== null && "code" in error
+        ? error.code
+        : undefined;
+    const invalidTokenCodes = [
+      "auth/argument-error",
+      "auth/id-token-expired",
+      "auth/id-token-revoked",
+      "auth/invalid-id-token",
+      "auth/user-disabled",
+      "auth/user-not-found",
+    ];
+
+    if (
+      typeof authCode === "string" &&
+      invalidTokenCodes.includes(authCode)
+    ) {
+      return NextResponse.json(
+        { error: "Invalid or expired Firebase ID token." },
+        { status: 401 }
+      );
+    }
+
     console.error("Session creation failed:", error);
     return NextResponse.json(
       { error: "Unable to create session" },
-      { status: 401 }
+      { status: 500 }
     );
   }
 }
