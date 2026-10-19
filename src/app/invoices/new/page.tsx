@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import {
@@ -45,7 +45,7 @@ const money = (amount: number) =>
     currency: "INR",
   }).format(amount);
 
-export default function NewInvoicePage() {
+function NewInvoicePage() {
   const { loading: authLoading } = useRequireAuth();
   const router = useRouter();
 const searchParams = useSearchParams();
@@ -542,5 +542,12 @@ return (
         </div>
       </main>
     </div>
+  );
+}
+export default function NewInvoicePageWrapper() {
+  return (
+    <Suspense fallback={<div>Loading invoice...</div>}>
+      <NewInvoicePage />
+    </Suspense>
   );
 }
