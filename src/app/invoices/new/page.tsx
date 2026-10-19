@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import {
   ArrowLeft,
@@ -48,7 +48,9 @@ const money = (amount: number) =>
 export default function NewInvoicePage() {
   const { loading: authLoading } = useRequireAuth();
   const router = useRouter();
-
+const searchParams = useSearchParams();
+const editId = searchParams.get("edit");
+const isEditing = Boolean(editId);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customersLoading, setCustomersLoading] = useState(true);
   const [customerId, setCustomerId] = useState("");
@@ -86,6 +88,74 @@ export default function NewInvoicePage() {
     })
     .finally(() => setCustomersLoading(false));
 }, [authLoading]);
+
+
+useEffect(() => {
+  if (authLoading || customersLoading || !editId) return;
+
+  let cancelled = false;
+
+  async function loadInvoice() {
+    try {
+      setError("");
+
+      const response = await fetch("/api/invoices");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to load invoices.");
+      }
+
+     const invoice = (data.invoices as {
+  id: string;
+  status?: string;
+  customerId?: string;
+  issueDate?: string;
+  dueDate?: string;
+  taxRate?: number;
+  items?: InvoiceItem[];
+}[] | undefined)?.find(
+  (item) => item.id === editId
+);
+      if (!invoice) {
+        throw new Error("Invoice not found.");
+      }
+
+      if ((invoice.status ?? "draft").toLowerCase() !== "draft") {
+        throw new Error("Only draft invoices can be edited.");
+      }
+
+      if (cancelled) return;
+
+      setCustomerId(invoice.customerId ?? "");
+      setIssueDate(invoice.issueDate ?? today());
+      setDueDate(invoice.dueDate ?? today());
+      setTaxRate(Number(invoice.taxRate ?? 0));
+
+      setItems(
+        invoice.items?.length
+          ? invoice.items.map((item) => ({
+              description: item.description ?? "",
+              quantity: Number(item.quantity ?? 1),
+              unitPrice: Number(item.unitPrice ?? 0),
+            }))
+          : [{ description: "", quantity: 1, unitPrice: 0 }]
+      );
+    } catch (err) {
+      if (!cancelled) {
+        setError(
+          err instanceof Error ? err.message : "Unable to load invoice."
+        );
+      }
+    }
+  }
+
+  void loadInvoice();
+
+  return () => {
+    cancelled = true;
+  };
+}, [authLoading, customersLoading, editId]);
 
   const subtotal = items.reduce(
     (sum, item) =>
@@ -144,26 +214,33 @@ export default function NewInvoicePage() {
     setSaving(true);
 
     try {
-      const response = await fetch("/api/invoices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerId,
-          issueDate,
-          dueDate,
-          taxRate,
-          items,
-        }),
-      });
+     const response = await fetch(
+  isEditing ? `/api/invoices/${editId}` : "/api/invoices",
+  {
+    method: isEditing ? "PATCH" : "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      customerId,
+      issueDate,
+      dueDate,
+      taxRate,
+      items,
+    }),
+  }
+);
 
-      const data = await response.json();
+const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || "Unable to create invoice.");
-      }
+if (!response.ok) {
+  throw new Error(
+    data.error ||
+      (isEditing ? "Unable to update invoice." : "Unable to create invoice.")
+  );
+}
 
-      router.push("/invoices");
-      router.refresh();
+router.push("/invoices");
+router.refresh();
+   
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Unable to create invoice."
@@ -203,12 +280,15 @@ return (
           </button>
 
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              Create Invoice
-            </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Add customer details and invoice line items.
-            </p>
+          <h1 className="text-2xl font-bold tracking-tight">
+  {isEditing ? "Edit Invoice" : "Create Invoice"}
+</h1>
+
+<p className="mt-1 text-sm text-muted-foreground">
+  {isEditing
+    ? "Update the existing invoice details."
+    : "Add customer details and invoice line items."}
+</p>
           </div>
 
           {error && (
@@ -453,7 +533,7 @@ return (
                 ) : (
                   <>
                     <Save className="mr-2 h-4 w-4" />
-                    Save Invoice
+                    {isEditing ? "Save Changes" : "Save Invoice"}
                   </>
                 )}
               </Button>

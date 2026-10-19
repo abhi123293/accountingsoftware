@@ -1,14 +1,20 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Plus,
   Search,
   Loader2,
   Receipt,
+  Pencil,
+  Trash2,
+  Download,
+  X,
+  Send,
+  Wallet,
+  ChevronRight,
 } from "lucide-react";
-import { Download } from "lucide-react";
 import { generateInvoicePDF } from "@/lib/generate-invoice-pdf";
 
 import Sidebar from "@/components/layout/Sidebar";
@@ -35,26 +41,77 @@ type Invoice = {
   total?: number;
   status?: string;
   amountPaid: number;
-balanceDue: number;
+  balanceDue: number;
 };
+
+const inr = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+});
+
+const formatINR = (value: number | undefined) => inr.format(value ?? 0);
+
+function formatDate(value?: string) {
+  if (!value) return "—";
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function getEffectiveStatus(invoice: Invoice, today: Date) {
+  const status = (invoice.status ?? "draft").toLowerCase();
+  const dueDate = invoice.dueDate
+    ? new Date(`${invoice.dueDate}T00:00:00`)
+    : null;
+
+  if (
+    status !== "draft" &&
+    status !== "paid" &&
+    dueDate &&
+    !Number.isNaN(dueDate.getTime()) &&
+    dueDate < today
+  ) {
+    return "overdue";
+  }
+  return status;
+}
+
+const STATUS_TABS = [
+  { value: "all", label: "All" },
+  { value: "draft", label: "Draft" },
+  { value: "sent", label: "Unpaid" },
+  { value: "partially_paid", label: "Partial" },
+  { value: "overdue", label: "Overdue" },
+  { value: "paid", label: "Paid" },
+];
+
+type Row = { invoice: Invoice; status: string };
 
 export default function InvoicesPage() {
   const { loading: authLoading } = useRequireAuth();
+  const router = useRouter();
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-const [actionLoading, setActionLoading] = useState("");
+  const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
 
+  const [selectedId, setSelectedId] = useState("");
+  const [sheetOpen, setSheetOpen] = useState(false);
+
   const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
-const [paymentAmount, setPaymentAmount] = useState("");
-const [paymentDate, setPaymentDate] = useState(
-  new Date().toISOString().slice(0, 10)
-);
-const [paymentMethod, setPaymentMethod] = useState("upi");
-const [paymentReference, setPaymentReference] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentDate, setPaymentDate] = useState(
+    new Date().toISOString().slice(0, 10)
+  );
+  const [paymentMethod, setPaymentMethod] = useState("upi");
+  const [paymentReference, setPaymentReference] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
@@ -68,11 +125,7 @@ const [paymentReference, setPaymentReference] = useState("");
           throw new Error("Invoices API is not available yet.");
         }
 
-
-
-
-
-const data = await response.json();
+        const data = await response.json();
 
         if (!response.ok) {
           throw new Error(data.error || "Unable to load invoices.");
@@ -81,9 +134,7 @@ const data = await response.json();
         setInvoices(data.invoices ?? []);
       } catch (err) {
         setError(
-          err instanceof Error
-            ? err.message
-            : "Unable to load invoices."
+          err instanceof Error ? err.message : "Unable to load invoices."
         );
       } finally {
         setLoading(false);
@@ -93,186 +144,226 @@ const data = await response.json();
     void loadInvoices();
   }, [authLoading]);
 
-  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
+  const rows: Row[] = invoices.map((invoice) => ({
+    invoice,
+    status: getEffectiveStatus(invoice, today),
+  }));
 
-const today = new Date();
-today.setHours(0, 0, 0, 0);
+  const filtered = rows.filter(({ invoice, status }) => {
+    const query = search.toLowerCase();
+    const matchesSearch =
+      (invoice.invoiceNumber ?? "").toLowerCase().includes(query) ||
+      (invoice.customerName ?? "").toLowerCase().includes(query);
+    const matchesStatus = statusFilter === "all" || status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
-const filteredInvoices = invoices.filter((invoice) => {
-  const query = search.toLowerCase();
-  const status = (invoice.status ?? "draft").toLowerCase();
+  const countFor = (value: string) =>
+    value === "all"
+      ? rows.length
+      : rows.filter((item) => item.status === value).length;
 
-  const matchesSearch =
-    (invoice.invoiceNumber ?? "").toLowerCase().includes(query) ||
-    (invoice.customerName ?? "").toLowerCase().includes(query);
+  // Desktop panel always shows something: the picked invoice, or the first one.
+  const selectedRow =
+    filtered.find((row) => row.invoice.id === selectedId) ?? filtered[0];
+  const sheetRow = sheetOpen
+    ? rows.find((row) => row.invoice.id === selectedId)
+    : undefined;
 
-  const dueDate = invoice.dueDate
-    ? new Date(`${invoice.dueDate}T00:00:00`)
-    : null;
-
- const effectiveStatus =
-  status !== "draft" &&
-  status !== "paid" &&
-  dueDate &&
-  !Number.isNaN(dueDate.getTime()) &&
-  dueDate < today
-    ? "overdue"
-    : status;
-
-  const matchesStatus =
-    statusFilter === "all" ||
-    effectiveStatus === statusFilter;
-
-  return matchesSearch && matchesStatus;
-});
-
+  const issuedRows = rows.filter((item) => item.status !== "draft");
+  const totalInvoiced = issuedRows.reduce(
+    (s, i) => s + (i.invoice.total ?? 0),
+    0
+  );
+  const totalCollected = issuedRows.reduce(
+    (s, i) => s + (i.invoice.amountPaid ?? 0),
+    0
+  );
+  const totalOutstanding = issuedRows
+    .filter((i) => i.status !== "paid")
+    .reduce((s, i) => s + (i.invoice.balanceDue ?? 0), 0);
+  const overdueCount = rows.filter((i) => i.status === "overdue").length;
+  const collectionRate =
+    totalInvoiced > 0
+      ? Math.min(100, Math.round((totalCollected / totalInvoiced) * 100))
+      : 0;
 
   const handleDownloadPDF = (invoice: Invoice) => {
-  if (
-    !invoice.invoiceNumber ||
-    !invoice.customerName ||
-    !invoice.items
-  ) {
-    setError("Invoice details are incomplete. Please reload the invoices.");
-    return;
-  }
-
-  try {
-    generateInvoicePDF({
-      invoiceNumber: invoice.invoiceNumber,
-      customerName: invoice.customerName,
-      issueDate: invoice.issueDate ?? "",
-      dueDate: invoice.dueDate ?? "",
-      items: invoice.items,
-      subtotal: invoice.subtotal ?? 0,
-      taxRate: invoice.taxRate ?? 0,
-      tax: invoice.tax ?? 0,
-      total: invoice.total ?? 0,
-      status: invoice.status ?? "draft",
-      amountPaid: invoice.amountPaid ?? 0,
-    balanceDue:
-      invoice.balanceDue ??
-      (invoice.total ?? 0) - (invoice.amountPaid ?? 0),
-    });
-  } catch {
-    setError("Unable to generate the invoice PDF.");
-  }
-};
-
-
-
-const handleIssueInvoice = async (invoice: Invoice) => {
-  const confirmed = window.confirm(
-    `Issue invoice ${invoice.invoiceNumber}?`
-  );
-
-  if (!confirmed) return;
-
-  setActionLoading(invoice.id);
-  setError("");
-
-  try {
-    const response = await fetch(`/api/invoices/${invoice.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "sent" }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || "Unable to issue invoice.");
+    if (!invoice.invoiceNumber || !invoice.customerName || !invoice.items) {
+      setError("Invoice details are incomplete. Please reload the invoices.");
+      return;
     }
 
-    setInvoices((current) =>
-      current.map((item) =>
-        item.id === invoice.id
-          ? { ...item, status: "sent" }
-          : item
-      )
-    );
-  } catch (err) {
-    setError(
-      err instanceof Error ? err.message : "Unable to issue invoice."
-    );
-  } finally {
-    setActionLoading("");
-  }
-};
+    try {
+      generateInvoicePDF({
+        invoiceNumber: invoice.invoiceNumber,
+        customerName: invoice.customerName,
+        issueDate: invoice.issueDate ?? "",
+        dueDate: invoice.dueDate ?? "",
+        items: invoice.items,
+        subtotal: invoice.subtotal ?? 0,
+        taxRate: invoice.taxRate ?? 0,
+        tax: invoice.tax ?? 0,
+        total: invoice.total ?? 0,
+        status: invoice.status ?? "draft",
+        amountPaid: invoice.amountPaid ?? 0,
+        balanceDue:
+          invoice.balanceDue ??
+          (invoice.total ?? 0) - (invoice.amountPaid ?? 0),
+      });
+    } catch {
+      setError("Unable to generate the invoice PDF.");
+    }
+  };
 
+  const handleIssueInvoice = async (invoice: Invoice) => {
+    const confirmed = window.confirm(`Issue invoice ${invoice.invoiceNumber}?`);
+    if (!confirmed) return;
 
+    setActionLoading(invoice.id);
+    setError("");
 
-const handleRecordPayment = async (event: React.FormEvent<HTMLFormElement>) => {
-  event.preventDefault();
-
-  if (!paymentInvoice) return;
-
-  const amount = Number(paymentAmount);
-
-  if (!Number.isFinite(amount) || amount <= 0) {
-    setError("Enter a valid payment amount.");
-    return;
-  }
-
-  setActionLoading(paymentInvoice.id);
-  setError("");
-
-  try {
-    const response = await fetch(
-      `/api/invoices/${paymentInvoice.id}/payments`,
-      {
-        method: "POST",
+    try {
+      const response = await fetch(`/api/invoices/${invoice.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount,
-          paymentDate,
-          method: paymentMethod,
-          reference: paymentReference,
-        }),
+        body: JSON.stringify({ status: "sent" }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to issue invoice.");
       }
-    );
 
-    const contentType = response.headers.get("content-type");
+      setInvoices((current) =>
+        current.map((item) =>
+          item.id === invoice.id ? { ...item, status: "sent" } : item
+        )
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unable to issue invoice."
+      );
+    } finally {
+      setActionLoading("");
+    }
+  };
 
-if (!contentType?.includes("application/json")) {
-  throw new Error(
-    `Payment API returned HTML instead of JSON (HTTP ${response.status}). Check the API route path.`
-  );
-}
+  const openPayment = (invoice: Invoice) => {
+    setPaymentInvoice(invoice);
+    setPaymentAmount(String(invoice.balanceDue ?? invoice.total ?? 0));
+    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setPaymentMethod("upi");
+    setPaymentReference("");
+    setError("");
+  };
 
-const data = await response.json();
+  const handleRecordPayment = async (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
 
-    if (!response.ok) {
-      throw new Error(data.error || "Unable to record payment.");
+    if (!paymentInvoice) return;
+
+    const amount = Number(paymentAmount);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError("Enter a valid payment amount.");
+      return;
     }
 
-    setInvoices((current) =>
-      current.map((invoice) =>
-        invoice.id === paymentInvoice.id
-          ? {
-              ...invoice,
-              amountPaid: data.amountPaid,
-              balanceDue: data.balanceDue,
-              status: data.status,
-            }
-          : invoice
-      )
+    setActionLoading(paymentInvoice.id);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/invoices/${paymentInvoice.id}/payments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount,
+            paymentDate,
+            method: paymentMethod,
+            reference: paymentReference,
+          }),
+        }
+      );
+
+      const contentType = response.headers.get("content-type");
+
+      if (!contentType?.includes("application/json")) {
+        throw new Error(
+          `Payment API returned HTML instead of JSON (HTTP ${response.status}). Check the API route path.`
+        );
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to record payment.");
+      }
+
+      setInvoices((current) =>
+        current.map((invoice) =>
+          invoice.id === paymentInvoice.id
+            ? {
+                ...invoice,
+                amountPaid: data.amountPaid,
+                balanceDue: data.balanceDue,
+                status: data.status,
+              }
+            : invoice
+        )
+      );
+
+      setPaymentInvoice(null);
+      setPaymentAmount("");
+      setPaymentReference("");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unable to record payment."
+      );
+    } finally {
+      setActionLoading("");
+    }
+  };
+
+  const handleDeleteInvoice = async (invoice: Invoice) => {
+    const confirmed = window.confirm(
+      `Delete draft invoice ${invoice.invoiceNumber ?? invoice.id}? This cannot be undone.`
     );
+    if (!confirmed) return;
 
-    setPaymentInvoice(null);
-    setPaymentAmount("");
-    setPaymentReference("");
-  } catch (err) {
-    setError(
-      err instanceof Error ? err.message : "Unable to record payment."
-    );
-  } finally {
-    setActionLoading("");
-  }
-};
+    setActionLoading(invoice.id);
+    setError("");
 
+    try {
+      const response = await fetch(`/api/invoices/${invoice.id}`, {
+        method: "DELETE",
+      });
 
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to delete invoice.");
+      }
+
+      setInvoices((current) => current.filter((item) => item.id !== invoice.id));
+      setSheetOpen(false);
+      setSelectedId("");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Unable to delete invoice."
+      );
+    } finally {
+      setActionLoading("");
+    }
+  };
 
   if (authLoading) {
     return (
@@ -282,332 +373,666 @@ const data = await response.json();
     );
   }
 
+  const detailProps = {
+    busyId: actionLoading,
+    onPdf: handleDownloadPDF,
+    onIssue: handleIssueInvoice,
+    onPay: openPayment,
+    onEdit: (invoice: Invoice) =>
+      router.push(`/invoices/new?edit=${invoice.id}`),
+    onDelete: handleDeleteInvoice,
+  };
+
   return (
- 
-<div className="flex min-h-screen w-full min-w-0 bg-background text-foreground">
-  <div className="hidden shrink-0 md:block">
-    <Sidebar />
-  </div>
+    <div className="flex min-h-screen w-full min-w-0 bg-background text-foreground">
+      <div className="hidden shrink-0 md:block">
+        <Sidebar />
+      </div>
 
-  <main className="min-w-0 flex-1">
-    <Header />
+      <main className="min-w-0 flex-1">
+        <Header />
 
-
-        <div className="space-y-6 p-4 sm:p-6 lg:p-8">
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">
+        <div className="mx-auto w-full max-w-[1500px] space-y-5 p-4 sm:p-6 lg:p-8">
+          {/* Title */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
                 Invoices
               </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <p className="mt-0.5 text-sm text-muted-foreground">
                 Create and manage customer invoices.
               </p>
             </div>
 
             <Button
-              onClick={() => {
-                window.location.href = "/invoices/new";
-              }}
+              className="shrink-0"
+              onClick={() => router.push("/invoices/new")}
             >
-              <Plus className="mr-2 h-4 w-4" />
-              Create Invoice
+              <Plus className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Create Invoice</span>
+              <span className="sr-only sm:hidden">Create Invoice</span>
             </Button>
           </div>
 
           {error && (
             <div
               role="alert"
-              className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300"
+              className="flex items-start justify-between gap-3 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300"
             >
-              {error}
+              <span>{error}</span>
+              <button
+                type="button"
+                onClick={() => setError("")}
+                aria-label="Dismiss error"
+                className="shrink-0"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
           )}
 
-          <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
-            <div className="flex flex-col justify-between gap-4 border-b p-4 sm:flex-row sm:items-center">
-              <div>
-                <h2 className="font-semibold">Invoice Directory</h2>
-                <p className="text-sm text-muted-foreground">
-                  {invoices.length} invoice
-                  {invoices.length !== 1 ? "s" : ""}
-                </p>
-              </div>
-
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search invoices..."
-                  className="pl-9 sm:w-64"
-                  aria-label="Search invoices"
+          {/* Overview strip */}
+          <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+            <div className="grid grid-cols-2 lg:grid-cols-4">
+              <Metric
+                label="Total invoiced"
+                value={formatINR(totalInvoiced)}
+                className="border-b border-r lg:border-b-0"
+              />
+              <Metric
+                label="Collected"
+                value={formatINR(totalCollected)}
+                className="border-b lg:border-b-0 lg:border-r"
+              />
+              <Metric
+                label="Outstanding"
+                value={formatINR(totalOutstanding)}
+                className="border-r lg:border-b-0"
+              />
+              <Metric
+                label="Overdue"
+                value={`${overdueCount} invoice${overdueCount !== 1 ? "s" : ""}`}
+              />
+            </div>
+            <div className="flex items-center gap-3 border-t bg-muted/40 px-5 py-3">
+              <span className="shrink-0 text-xs text-muted-foreground">
+                Collection rate
+              </span>
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-border">
+                <div
+                  className="h-full rounded-full bg-foreground transition-all"
+                  style={{ width: `${collectionRate}%` }}
                 />
               </div>
-              
-<select
-  value={statusFilter}
-  onChange={(event) => setStatusFilter(event.target.value)}
-  aria-label="Filter invoices by status"
-  className="h-10 rounded-md border border-border bg-background px-3 text-sm"
->
-  <option value="all">All statuses</option>
-  <option value="draft">Draft</option>
-  <option value="sent">Unpaid</option>
-  <option value="paid">Paid</option>
-  <option value="overdue">Overdue</option>
-  <option value="partially_paid">Partially Paid</option>
-</select>
-
+              <span className="shrink-0 text-xs font-semibold tabular-nums">
+                {collectionRate}%
+              </span>
             </div>
+          </section>
 
-            {loading ? (
-              <div className="flex items-center justify-center gap-2 p-12 text-sm text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                Loading invoices...
-              </div>
-            ) : filteredInvoices.length === 0 ? (
-              <div className="flex flex-col items-center px-4 py-14 text-center">
-                <div className="mb-4 rounded-full bg-muted p-4">
-                  <Receipt className="h-7 w-7 text-muted-foreground" />
+          {/* Split view */}
+          <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+            {/* List */}
+            <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+              <div className="space-y-3 border-b p-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search invoice or customer..."
+                    className="pl-9"
+                    aria-label="Search invoices"
+                  />
                 </div>
 
-<h3 className="font-semibold">
-  {invoices.length === 0
-    ? "No invoices yet"
-    : "No matching invoices"}
-</h3>
-
-<p className="mt-1 text-sm text-muted-foreground">
-  {invoices.length === 0
-    ? "Create your first invoice to get started."
-    : "Try another search term or select a different status filter."}
-</p>
-
-                {!search && (
-                  <Button
-                    className="mt-4"
-                    onClick={() => {
-                      window.location.href = "/invoices/new";
-                    }}
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create Invoice
-                  </Button>
-                )}
+                <div
+                  className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5"
+                  role="tablist"
+                  aria-label="Filter invoices by status"
+                >
+                  {STATUS_TABS.map((tab) => {
+                    const active = statusFilter === tab.value;
+                    return (
+                      <button
+                        key={tab.value}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => setStatusFilter(tab.value)}
+                        className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                          active
+                            ? "bg-foreground text-background"
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        }`}
+                      >
+                        {tab.label}
+                        <span className="tabular-nums opacity-60">
+                          {countFor(tab.value)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[1250px] text-left text-sm">
-                  <thead className="bg-muted/50 text-muted-foreground">
-                    <tr>
-                      <th className="px-5 py-3 font-medium">Invoice</th>
-                      <th className="px-5 py-3 font-medium">Customer</th>
-                      <th className="px-5 py-3 font-medium">Issue Date</th>
-                      <th className="px-5 py-3 font-medium">Due Date</th>
-                      <th className="px-5 py-3 font-medium">Total</th>
-<th className="px-5 py-3 font-medium">Amount Paid</th>
-<th className="px-5 py-3 font-medium">Balance Due</th>
-<th className="px-5 py-3 font-medium">Status</th>
-                      <th className="px-5 py-3 font-medium">Actions</th>
-                    </tr>
-                  </thead>
 
-                  <tbody className="divide-y">
-                    {filteredInvoices.map((invoice) => (
-                      <tr key={invoice.id} className="hover:bg-muted/30">
-                        <td className="whitespace-nowrap px-5 py-4 font-medium">
-  {invoice.invoiceNumber || invoice.id}
-</td>
-                        <td className="px-5 py-4">
-                          {invoice.customerName || "—"}
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-4">
-  {invoice.issueDate || "—"}
-</td>
+              {loading ? (
+                <div className="flex items-center justify-center gap-2 p-12 text-sm text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Loading invoices...
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="flex flex-col items-center px-4 py-14 text-center">
+                  <div className="mb-4 rounded-full bg-muted p-4">
+                    <Receipt className="h-7 w-7 text-muted-foreground" />
+                  </div>
+                  <h3 className="font-semibold">
+                    {invoices.length === 0
+                      ? "No invoices yet"
+                      : "No matching invoices"}
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {invoices.length === 0
+                      ? "Create your first invoice to get started."
+                      : "Try another search term or status."}
+                  </p>
+                  {invoices.length === 0 && (
+                    <Button
+                      className="mt-4"
+                      onClick={() => router.push("/invoices/new")}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create Invoice
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <ul className="max-h-[70vh] divide-y overflow-y-auto">
+                  {filtered.map(({ invoice, status }) => {
+                    const active = selectedRow?.invoice.id === invoice.id;
+                    const total = invoice.total ?? 0;
+                    const pct =
+                      total > 0
+                        ? Math.min(
+                            100,
+                            ((invoice.amountPaid ?? 0) / total) * 100
+                          )
+                        : 0;
 
-<td className="whitespace-nowrap px-5 py-4">
-  {invoice.dueDate || "—"}
-</td>
-                        <td className="px-5 py-4">
-                          {typeof invoice.total === "number"
-                            ? new Intl.NumberFormat("en-IN", {
-                                style: "currency",
-                                currency: "INR",
-                              }).format(invoice.total)
-                            : "—"}
-                        </td>
-                        <td className="px-5 py-4">
-  {new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-  }).format(invoice.amountPaid ?? 0)}
-</td>
+                    return (
+                      <li key={invoice.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedId(invoice.id);
+                            setSheetOpen(true);
+                          }}
+                          aria-current={active}
+                          className={`relative flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/50 ${
+                            active ? "bg-muted/60" : ""
+                          }`}
+                        >
+                          {active && (
+                            <span className="absolute inset-y-0 left-0 hidden w-0.5 bg-foreground xl:block" />
+                          )}
 
-<td className="px-5 py-4 font-medium">
-  {new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-  }).format(invoice.balanceDue ?? invoice.total ?? 0)}
-</td>
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold uppercase text-background">
+                            {(invoice.customerName || "?").charAt(0)}
+                          </span>
 
-{/* Status column */}
-<td className="px-5 py-4">
-  <InvoiceStatus status={invoice.status} />
-</td>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center justify-between gap-2">
+                              <span className="truncate text-sm font-semibold">
+                                {invoice.customerName || "Unknown customer"}
+                              </span>
+                              <span className="shrink-0 text-sm font-semibold tabular-nums">
+                                {formatINR(invoice.total)}
+                              </span>
+                            </span>
+                            <span className="mt-0.5 flex items-center justify-between gap-2">
+                              <span
+                                className="truncate text-xs text-muted-foreground"
+                                title={invoice.invoiceNumber || invoice.id}
+                              >
+                                {invoice.invoiceNumber || invoice.id}
+                              </span>
+                              <InvoiceStatus status={status} small />
+                            </span>
+                            {status !== "draft" && status !== "paid" && pct > 0 && (
+                              <span className="mt-2 block h-1 overflow-hidden rounded-full bg-border">
+                                <span
+                                  className="block h-full rounded-full bg-foreground"
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </span>
+                            )}
+                          </span>
 
-{/* Actions column */}
-<td className="px-5 py-4">
-  <Button
-    type="button"
-    variant="outline"
-    size="sm"
-    className="whitespace-nowrap"
-    onClick={() => handleDownloadPDF(invoice)}
-  >
-    <Download className="mr-2 h-4 w-4" />
-    Download PDF
-  </Button>
-  
-{(invoice.status ?? "draft").toLowerCase() === "draft" && (
-  <Button
-    type="button"
-    size="sm"
-    className="ml-2 whitespace-nowrap"
-    disabled={actionLoading === invoice.id}
-    onClick={() => handleIssueInvoice(invoice)}
-  >
-    {actionLoading === invoice.id ? (
-      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-    ) : null}
-    Issue Invoice
-  </Button>
-)}
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground xl:hidden" />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
 
-{["sent", "partially_paid", "overdue"].includes(
-  (invoice.status ?? "").toLowerCase()
-) && (
-  <Button
-    type="button"
-    size="sm"
-    variant="outline"
-    className="ml-2 whitespace-nowrap"
-    onClick={() => {
-      setPaymentInvoice(invoice);
-      setPaymentAmount(String(invoice.balanceDue ?? invoice.total ?? 0));
-      setPaymentDate(new Date().toISOString().slice(0, 10));
-      setPaymentMethod("upi");
-      setPaymentReference("");
-      setError("");
-    }}
-  >
-    Record Payment
-  </Button>
-)}
-
-</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-      
-{paymentInvoice && (
-  <section className="rounded-xl border bg-card p-5 shadow-sm">
-    <h2 className="text-lg font-semibold">Record Payment</h2>
-    <p className="mt-1 text-sm text-muted-foreground">
-      Invoice: {paymentInvoice.invoiceNumber}
-    </p>
-    <p className="mt-1 text-sm">
-      Remaining balance:{" "}
-      {new Intl.NumberFormat("en-IN", {
-        style: "currency",
-        currency: "INR",
-      }).format(paymentInvoice.balanceDue)}
-    </p>
-
-    <form onSubmit={handleRecordPayment} className="mt-4 space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1">
-          <label className="text-sm font-medium">Payment Amount (₹)</label>
-          <Input
-            type="number"
-            min="0.01"
-            max={paymentInvoice.balanceDue}
-            step="0.01"
-            required
-            value={paymentAmount}
-            onChange={(event) => setPaymentAmount(event.target.value)}
-            placeholder="Enter amount"
-          />
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-sm font-medium">Payment Date</label>
-          <Input
-            type="date"
-            required
-            value={paymentDate}
-            onChange={(event) => setPaymentDate(event.target.value)}
-          />
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-sm font-medium">Payment Method</label>
-          <select
-            value={paymentMethod}
-            onChange={(event) => setPaymentMethod(event.target.value)}
-            className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-          >
-            <option value="upi">UPI</option>
-            <option value="cash">Cash</option>
-            <option value="bank_transfer">Bank Transfer</option>
-            <option value="card">Card</option>
-            <option value="cheque">Cheque</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-
-        <div className="space-y-1">
-          <label className="text-sm font-medium">
-            Reference (Optional)
-          </label>
-          <Input
-            value={paymentReference}
-            onChange={(event) => setPaymentReference(event.target.value)}
-            placeholder="Transaction ID or reference"
-          />
-        </div>
-      </div>
-
-      <div className="flex gap-2">
-        <Button type="submit" disabled={actionLoading === paymentInvoice.id}>
-          {actionLoading === paymentInvoice.id && (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          )}
-          Save Payment
-        </Button>
-
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setPaymentInvoice(null)}
-        >
-          Cancel
-        </Button>
-      </div>
-    </form>
-  </section>
-)}
-
+            {/* Desktop detail panel */}
+            <div className="hidden xl:sticky xl:top-4 xl:block">
+              {selectedRow ? (
+                <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+                  <InvoiceDetail
+                    invoice={selectedRow.invoice}
+                    status={selectedRow.status}
+                    {...detailProps}
+                  />
+                </section>
+              ) : (
+                !loading && (
+                  <section className="flex min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
+                    <Receipt className="mb-3 h-8 w-8" />
+                    Select an invoice to see its details.
+                  </section>
+                )
+              )}
+            </div>
+          </div>
         </div>
       </main>
+
+      {/* Mobile / tablet detail sheet */}
+      {sheetRow && (
+        <div
+          className="fixed inset-0 z-40 flex items-end justify-center bg-black/50 sm:items-center sm:p-4 xl:hidden"
+          onClick={() => setSheetOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Invoice details"
+            onClick={(event) => event.stopPropagation()}
+            className="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border bg-card shadow-xl sm:max-w-xl sm:rounded-2xl"
+          >
+            <InvoiceDetail
+              invoice={sheetRow.invoice}
+              status={sheetRow.status}
+              onClose={() => setSheetOpen(false)}
+              {...detailProps}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Record payment dialog */}
+      {paymentInvoice && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4"
+          onClick={() => setPaymentInvoice(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Record payment"
+            onClick={(event) => event.stopPropagation()}
+            className="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border bg-card p-5 shadow-xl sm:max-w-lg sm:rounded-2xl"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Record Payment</h2>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {paymentInvoice.invoiceNumber} · {paymentInvoice.customerName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPaymentInvoice(null)}
+                aria-label="Close"
+                className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between rounded-xl bg-muted/50 p-3 text-sm">
+              <span className="text-muted-foreground">Remaining balance</span>
+              <span className="font-semibold tabular-nums">
+                {formatINR(paymentInvoice.balanceDue)}
+              </span>
+            </div>
+
+            <form onSubmit={handleRecordPayment} className="mt-4 space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <label htmlFor="pay-amount" className="text-sm font-medium">
+                    Payment Amount (₹)
+                  </label>
+                  <Input
+                    id="pay-amount"
+                    type="number"
+                    inputMode="decimal"
+                    min="0.01"
+                    max={paymentInvoice.balanceDue}
+                    step="0.01"
+                    required
+                    value={paymentAmount}
+                    onChange={(event) => setPaymentAmount(event.target.value)}
+                    placeholder="Enter amount"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label htmlFor="pay-date" className="text-sm font-medium">
+                    Payment Date
+                  </label>
+                  <Input
+                    id="pay-date"
+                    type="date"
+                    required
+                    value={paymentDate}
+                    onChange={(event) => setPaymentDate(event.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label htmlFor="pay-method" className="text-sm font-medium">
+                    Payment Method
+                  </label>
+                  <select
+                    id="pay-method"
+                    value={paymentMethod}
+                    onChange={(event) => setPaymentMethod(event.target.value)}
+                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                  >
+                    <option value="upi">UPI</option>
+                    <option value="cash">Cash</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="card">Card</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label htmlFor="pay-ref" className="text-sm font-medium">
+                    Reference (Optional)
+                  </label>
+                  <Input
+                    id="pay-ref"
+                    value={paymentReference}
+                    onChange={(event) => setPaymentReference(event.target.value)}
+                    placeholder="Transaction ID or reference"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setPaymentInvoice(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={actionLoading === paymentInvoice.id}
+                >
+                  {actionLoading === paymentInvoice.id && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
+                  Save Payment
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function InvoiceStatus({ status }: { status?: string }) {
+function Metric({
+  label,
+  value,
+  className = "",
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <div className={`border-border p-4 sm:p-5 ${className}`}>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1.5 truncate text-xl font-bold tracking-tight tabular-nums sm:text-2xl">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+type DetailProps = {
+  invoice: Invoice;
+  status: string;
+  busyId: string;
+  onClose?: () => void;
+  onPdf: (invoice: Invoice) => void;
+  onIssue: (invoice: Invoice) => void;
+  onPay: (invoice: Invoice) => void;
+  onEdit: (invoice: Invoice) => void;
+  onDelete: (invoice: Invoice) => void;
+};
+
+function InvoiceDetail({
+  invoice,
+  status,
+  busyId,
+  onClose,
+  onPdf,
+  onIssue,
+  onPay,
+  onEdit,
+  onDelete,
+}: DetailProps) {
+  const busy = busyId === invoice.id;
+  const isDraft = status === "draft";
+  const canPay = ["sent", "partially_paid", "overdue"].includes(status);
+  const total = invoice.total ?? 0;
+  const paid = invoice.amountPaid ?? 0;
+  const balance = invoice.balanceDue ?? total - paid;
+  const pct = total > 0 ? Math.min(100, (paid / total) * 100) : 0;
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 border-b p-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-foreground text-base font-semibold uppercase text-background">
+            {(invoice.customerName || "?").charAt(0)}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-lg font-semibold leading-tight">
+              {invoice.customerName || "Unknown customer"}
+            </p>
+            <p
+              className="mt-0.5 truncate text-xs text-muted-foreground"
+              title={invoice.invoiceNumber || invoice.id}
+            >
+              {invoice.invoiceNumber || invoice.id}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <InvoiceStatus status={status} />
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Balance hero */}
+      <div className="p-5">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          {status === "paid" ? "Settled" : "Balance due"}
+        </p>
+        <p className="mt-1 text-3xl font-bold tracking-tight tabular-nums sm:text-4xl">
+          {formatINR(balance)}
+        </p>
+
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-border">
+          <div
+            className="h-full rounded-full bg-foreground transition-all"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className="mt-2 flex justify-between text-xs text-muted-foreground tabular-nums">
+          <span>Paid {formatINR(paid)}</span>
+          <span>of {formatINR(total)}</span>
+        </div>
+      </div>
+
+      {/* Dates */}
+      <div className="grid grid-cols-2 border-y">
+        <div className="border-r p-5">
+          <p className="text-xs text-muted-foreground">Issued</p>
+          <p className="mt-1 text-sm font-medium">
+            {formatDate(invoice.issueDate)}
+          </p>
+        </div>
+        <div className="p-5">
+          <p className="text-xs text-muted-foreground">Due</p>
+          <p
+            className={`mt-1 text-sm font-medium ${
+              status === "overdue" ? "text-red-600 dark:text-red-400" : ""
+            }`}
+          >
+            {formatDate(invoice.dueDate)}
+          </p>
+        </div>
+      </div>
+
+      {/* Line items */}
+      <div className="p-5">
+        <h3 className="text-sm font-semibold">Items</h3>
+
+        {invoice.items && invoice.items.length > 0 ? (
+          <ul className="mt-3 divide-y">
+            {invoice.items.map((item, index) => (
+              <li
+                key={`${item.description}-${index}`}
+                className="flex items-start justify-between gap-4 py-2.5 text-sm"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{item.description}</p>
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    {item.quantity} × {formatINR(item.unitPrice)}
+                  </p>
+                </div>
+                <p className="shrink-0 font-medium tabular-nums">
+                  {formatINR(item.lineTotal)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-sm text-muted-foreground">
+            No line items on this invoice.
+          </p>
+        )}
+
+        <dl className="mt-3 space-y-1.5 rounded-xl bg-muted/50 p-4 text-sm tabular-nums">
+          <div className="flex justify-between">
+            <dt className="text-muted-foreground">Subtotal</dt>
+            <dd>{formatINR(invoice.subtotal)}</dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-muted-foreground">
+              Tax{invoice.taxRate ? ` (${invoice.taxRate}%)` : ""}
+            </dt>
+            <dd>{formatINR(invoice.tax)}</dd>
+          </div>
+          <div className="flex justify-between border-t pt-2 font-semibold">
+            <dt>Total</dt>
+            <dd>{formatINR(total)}</dd>
+          </div>
+        </dl>
+      </div>
+
+      {/* Actions */}
+      <div className="flex flex-wrap gap-2 border-t bg-muted/30 p-5">
+        {isDraft && (
+          <Button
+            type="button"
+            className="min-w-[160px] flex-1"
+            disabled={busy}
+            onClick={() => onIssue(invoice)}
+          >
+            {busy ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="mr-2 h-4 w-4" />
+            )}
+            Issue Invoice
+          </Button>
+        )}
+
+        {canPay && (
+          <Button
+            type="button"
+            className="min-w-[160px] flex-1"
+            onClick={() => onPay(invoice)}
+          >
+            <Wallet className="mr-2 h-4 w-4" />
+            Record Payment
+          </Button>
+        )}
+
+        <Button type="button" variant="outline" onClick={() => onPdf(invoice)}>
+          <Download className="mr-2 h-4 w-4" />
+          PDF
+        </Button>
+
+        {isDraft && (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onEdit(invoice)}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="text-red-600 hover:text-red-700 dark:text-red-400"
+              disabled={busy}
+              onClick={() => onDelete(invoice)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InvoiceStatus({
+  status,
+  small,
+}: {
+  status?: string;
+  small?: boolean;
+}) {
   const value = (status || "draft").toLowerCase();
 
   const styles: Record<string, string> = {
@@ -615,20 +1040,24 @@ function InvoiceStatus({ status }: { status?: string }) {
     sent: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
     paid: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
     overdue: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
-    partially_paid:"bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+    partially_paid:
+      "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
   };
+
+  const label =
+    value === "sent"
+      ? "Unpaid"
+      : value === "partially_paid"
+        ? "Partially Paid"
+        : value.charAt(0).toUpperCase() + value.slice(1);
 
   return (
     <span
-      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-        styles[value] ?? "bg-muted text-muted-foreground"
-      }`}
+      className={`inline-flex shrink-0 whitespace-nowrap rounded-full font-medium ${
+        small ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-1 text-xs"
+      } ${styles[value] ?? "bg-muted text-muted-foreground"}`}
     >
-     {value === "sent"
-  ? "Unpaid"
-  : value === "partially_paid"
-    ? "Partially Paid"
-    : value.charAt(0).toUpperCase() + value.slice(1)}
+      {label}
     </span>
   );
 }
