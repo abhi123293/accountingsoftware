@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -286,6 +285,7 @@ async function handleDelete(contact: Contact) {
               title="Total Contacts"
               value={contacts.length}
               icon={<Users className="h-5 w-5" />}
+              highlight
             />
             <SummaryCard
               title="Customers"
@@ -577,20 +577,59 @@ function SummaryCard({
   title,
   value,
   icon,
+  highlight = false,
 }: {
   title: string;
   value: number;
   icon: React.ReactNode;
+  highlight?: boolean;
 }) {
   return (
-    <div className="rounded-xl border bg-card p-5 shadow-sm">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{title}</p>
-        <div className="rounded-lg bg-primary/10 p-2 text-primary">
-          {icon}
+    <div
+      className={`relative overflow-hidden rounded-2xl border p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${
+        highlight
+          ? "border-foreground bg-foreground text-background"
+          : "bg-card"
+      }`}
+    >
+      {/* soft decorative rings */}
+      <span
+        aria-hidden
+        className={`pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full border ${
+          highlight ? "border-background/15" : "border-foreground/10"
+        }`}
+      />
+      <span
+        aria-hidden
+        className={`pointer-events-none absolute -right-3 -top-3 h-16 w-16 rounded-full border ${
+          highlight ? "border-background/15" : "border-foreground/10"
+        }`}
+      />
+
+      <div className="relative flex items-start justify-between gap-3">
+        <div>
+          <p
+            className={`text-xs font-medium uppercase tracking-wider ${
+              highlight ? "text-background/70" : "text-muted-foreground"
+            }`}
+          >
+            {title}
+          </p>
+          <p className="mt-3 text-4xl font-bold tracking-tight tabular-nums">
+            {value}
+          </p>
         </div>
+
+        <span
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+            highlight
+              ? "bg-background/15 text-background"
+              : "bg-foreground text-background"
+          }`}
+        >
+          {icon}
+        </span>
       </div>
-      <p className="mt-3 text-2xl font-bold">{value}</p>
     </div>
   );
 }

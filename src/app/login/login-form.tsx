@@ -233,12 +233,12 @@ export default function LoginForm() {
             </Button>
           </form>
 
-          <p className="text-center text-sm text-muted-foreground">
+          {/* <p className="text-center text-sm text-muted-foreground">
             Don&apos;t have an account?{" "}
             <Link href="/register" className="font-medium text-primary underline underline-offset-2 hover:text-primary/80 transition-colors">
               Create an account
             </Link>
-          </p>
+          </p> */}
         </div>
 
         <p className="mt-8 text-center text-xs text-muted-foreground/60">
