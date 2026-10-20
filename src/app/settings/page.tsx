@@ -23,6 +23,8 @@ import {
   X,
   LogOut,
 } from "lucide-react";
+import UserManagementPanel from "@/components/settings/UserManagementPanel";
+import { usePermissions } from "@/lib/use-permissions";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import { useRequireAuth, useAuth } from "@/lib/auth-context";
@@ -114,6 +116,7 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const { isAdmin } = usePermissions();
 
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -1137,13 +1140,17 @@ export default function SettingsPage() {
           </section>
 
           <Tabs defaultValue="profile" className="w-full">
-            <TabsList className="grid w-full grid-cols-6">
+            <TabsList
+  className={`grid w-full ${isAdmin ? "grid-cols-7" : "grid-cols-6"}`}>
               <TabsTrigger value="profile">Profile</TabsTrigger>
               <TabsTrigger value="notifications">Notifications</TabsTrigger>
               <TabsTrigger value="appearance">Appearance</TabsTrigger>
               <TabsTrigger value="security">Security</TabsTrigger>
               <TabsTrigger value="company">Company</TabsTrigger>
               <TabsTrigger value="advanced">Advanced</TabsTrigger>
+              {isAdmin && (<TabsTrigger value="users"> Users & Permissions
+  </TabsTrigger>
+)}
             </TabsList>
 
             <TabsContent value="profile" className="mt-6 space-y-6">
@@ -2464,6 +2471,7 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
             </TabsContent>
+            {isAdmin && (<TabsContent value="users"> <UserManagementPanel /></TabsContent>)}
           </Tabs>
         </div>
       </main>
