@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { adminAuth } from "@/lib/firebase-admin-auth";
 import { firestore } from "@/lib/firestore-rest";
-import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
+import { requirePermission } from "@/lib/server-permissions";
 
 const CONTACT_TYPES = ["customer", "vendor", "both"] as const;
 
@@ -11,22 +9,22 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
-async function verifyAdmin() {
-  if (!adminAuth) {
-    throw new Error("FIREBASE_ADMIN_NOT_INITIALIZED");
-  }
+// async function verifyAdmin() {
+//   if (!adminAuth) {
+//     throw new Error("FIREBASE_ADMIN_NOT_INITIALIZED");
+//   }
 
-  const cookieStore = await cookies();
-  const session = cookieStore.get("__session")?.value;
+//   const cookieStore = await cookies();
+//   const session = cookieStore.get("__session")?.value;
 
-  if (!session) throw new Error("UNAUTHORIZED");
+//   if (!session) throw new Error("UNAUTHORIZED");
 
-  const decoded = await adminAuth.verifySessionCookie(session, true);
+//   const decoded = await adminAuth.verifySessionCookie(session, true);
 
-  if (!(await isAdminUid(decoded.uid))) {
-    throw new Error("FORBIDDEN");
-  }
-}
+//   if (!(await isAdminUid(decoded.uid))) {
+//     throw new Error("FORBIDDEN");
+//   }
+// }
 
 function handleError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
@@ -38,12 +36,12 @@ function handleError(error: unknown) {
     );
   }
 
-  if (message === "FORBIDDEN") {
-    return NextResponse.json(
-      { error: "Admin access required" },
-      { status: 403 }
-    );
-  }
+if (message === "FORBIDDEN") {
+  return NextResponse.json(
+    { error: "You do not have permission to perform this action." },
+    { status: 403 }
+  );
+}
 
   if (message === "FIREBASE_ADMIN_NOT_INITIALIZED") {
     return NextResponse.json(
@@ -72,7 +70,7 @@ export async function PATCH(
   { params }: RouteContext
 ) {
   try {
-    await verifyAdmin();
+    await requirePermission("contacts.edit");
 
     const { id } = await params;
     const body = await request.json();
@@ -176,7 +174,7 @@ export async function DELETE(
   { params }: RouteContext
 ) {
   try {
-    await verifyAdmin();
+    await requirePermission("contacts.delete");
 
     const { id } = await params;
 

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { usePermissions } from "@/lib/use-permissions";
 
 const navigation = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -25,9 +26,11 @@ const navigation = [
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
+
 export default function Sidebar() {
-    const { signOut } = useAuth();
+    const { user, signOut } = useAuth();
   const pathname = usePathname();
+  const { isAdmin } = usePermissions();
 
   return (
     <aside className="flex min-h-screen w-64 shrink-0 flex-col border-r border-border bg-card p-5">
@@ -74,9 +77,9 @@ export default function Sidebar() {
       </nav>
 
       <div className="mt-auto rounded-xl border border-border p-4">
-        <p className="text-sm font-semibold">Admin Account</p>
+        <p className="text-sm font-semibold">{user?.email ?? "Signed-in user"}</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Business administrator
+         {isAdmin ? "Business administrator" : "Team member"}
         </p>
       </div>
       <button

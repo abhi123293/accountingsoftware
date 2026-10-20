@@ -116,7 +116,17 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const { isAdmin } = usePermissions();
+  const {
+  isAdmin,
+  can,
+  loading: permissionsLoading,
+} = usePermissions();
+const canViewProfile = isAdmin || can("settings.profile.view");
+const canViewNotifications = isAdmin || can("settings.notifications.view");
+const canViewAppearance = isAdmin || can("settings.appearance.view");
+const canViewSecurity = isAdmin || can("settings.security.view");
+const canViewCompany = isAdmin || can("settings.company.view");
+const canViewAdvanced = isAdmin || can("settings.advanced.view");
 
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -1142,18 +1152,36 @@ export default function SettingsPage() {
           <Tabs defaultValue="profile" className="w-full">
             <TabsList
   className={`grid w-full ${isAdmin ? "grid-cols-7" : "grid-cols-6"}`}>
-              <TabsTrigger value="profile">Profile</TabsTrigger>
-              <TabsTrigger value="notifications">Notifications</TabsTrigger>
-              <TabsTrigger value="appearance">Appearance</TabsTrigger>
-              <TabsTrigger value="security">Security</TabsTrigger>
-              <TabsTrigger value="company">Company</TabsTrigger>
-              <TabsTrigger value="advanced">Advanced</TabsTrigger>
+             {canViewProfile && (
+  <TabsTrigger value="profile">Profile</TabsTrigger>
+)}
+
+{canViewNotifications && (
+  <TabsTrigger value="notifications">Notifications</TabsTrigger>
+)}
+
+{canViewAppearance && (
+  <TabsTrigger value="appearance">Appearance</TabsTrigger>
+)}
+
+{canViewSecurity && (
+  <TabsTrigger value="security">Security</TabsTrigger>
+)}
+
+{canViewCompany && (
+  <TabsTrigger value="company">Company</TabsTrigger>
+)}
+
+{canViewAdvanced && (
+  <TabsTrigger value="advanced">Advanced</TabsTrigger>
+)}
               {isAdmin && (<TabsTrigger value="users"> Users & Permissions
   </TabsTrigger>
 )}
             </TabsList>
 
-            <TabsContent value="profile" className="mt-6 space-y-6">
+{canViewProfile && (
+  <TabsContent value="profile" className="mt-6 space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle>Profile Information</CardTitle>
@@ -1202,6 +1230,7 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
             </TabsContent>
+            )}
 
             <TabsContent value="notifications" className="mt-6 space-y-6">
               <Card>

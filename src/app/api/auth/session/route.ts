@@ -3,7 +3,7 @@ import {
   adminAuth,
   AdminAuthConfigurationError,
 } from "@/lib/firebase-admin-auth";
-import { isAdminUid } from "@/lib/admin-uid";
+// import { isAdminUid } from "@/lib/admin-uid";
 
 const SESSION_DURATION = 5 * 24 * 60 * 60 * 1000;
 
@@ -30,12 +30,12 @@ export async function POST(request: Request) {
 
     const decoded = await adminAuth.verifyIdToken(token, true);
 
-    if (!(await isAdminUid(decoded.uid))) {
-      return NextResponse.json(
-        { error: "Admin access required" },
-        { status: 403 }
-      );
-    }
+    // if (!(await isAdminUid(decoded.uid))) {
+    //   return NextResponse.json(
+    //     { error: "Admin access required" },
+    //     { status: 403 }
+    //   );
+    // }
 
     const sessionCookie = await adminAuth.createSessionCookie(token, {
       expiresIn: SESSION_DURATION,

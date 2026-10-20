@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { adminAuth } from "@/lib/firebase-admin-auth";
 import { firestore } from "@/lib/firestore-rest";
-import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
+import { requirePermission } from "@/lib/server-permissions";
 
 const ACCOUNT_TYPES = [
   "asset",
@@ -15,15 +13,15 @@ const ACCOUNT_TYPES = [
 
 type AccountType = (typeof ACCOUNT_TYPES)[number];
 
-async function verifyAdmin() {
-  const cookieStore = await cookies();
-  const session = cookieStore.get("__session")?.value;
+// async function verifyAdmin() {
+//   const cookieStore = await cookies();
+//   const session = cookieStore.get("__session")?.value;
 
-  if (!session) throw new Error("UNAUTHORIZED");
+//   if (!session) throw new Error("UNAUTHORIZED");
 
-  const decoded = await adminAuth.verifySessionCookie(session, true);
-  if (!(await isAdminUid(decoded.uid))) throw new Error("FORBIDDEN");
-}
+//   const decoded = await adminAuth.verifySessionCookie(session, true);
+//   if (!(await isAdminUid(decoded.uid))) throw new Error("FORBIDDEN");
+// }
 
 function handleError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
@@ -36,11 +34,17 @@ function handleError(error: unknown) {
   }
 
   if (message === "FORBIDDEN") {
-    return NextResponse.json(
-      { error: "Administrator access required." },
-      { status: 403 }
-    );
-  }
+  return NextResponse.json(
+    { error: "You do not have permission to perform this action." },
+    { status: 403 }
+  );
+}
+if (message === "ADMIN_NOT_CONFIGURED") {
+  return NextResponse.json(
+    { error: "Authentication service is not configured." },
+    { status: 503 }
+  );
+}
 
   console.error("Accounts API error:", error);
   return NextResponse.json(
@@ -51,7 +55,7 @@ function handleError(error: unknown) {
 
 export async function GET() {
   try {
-    await verifyAdmin();
+    await requirePermission("accounts.view");
 
     const snapshot = await firestore.collection("accounts").get();
     const accounts = snapshot.docs.map((document) => {
@@ -74,7 +78,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    await verifyAdmin();
+    await requirePermission("accounts.create");
     const body: unknown = await request.json().catch(() => null);
 
     if (typeof body !== "object" || body === null || Array.isArray(body)) {

@@ -15,6 +15,7 @@ import { useRequireAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { usePermissions } from "@/lib/use-permissions";
 
 type Account = {
   id: string;
@@ -49,6 +50,14 @@ const newLine = (id: number): JournalLine => ({
 
 export default function LedgerPage() {
   const { user, loading: authLoading } = useRequireAuth();
+
+  const {
+    can,
+    isAdmin,
+    loading: permissionsLoading,
+  } = usePermissions();
+
+  const canViewLedger = isAdmin || can("ledger.view");
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
@@ -119,11 +128,22 @@ export default function LedgerPage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!authLoading && user) {
-      void loadData();
-    }
-  }, [authLoading, user, loadData]);
+useEffect(() => {
+  if (
+    !authLoading &&
+    !permissionsLoading &&
+    user &&
+    canViewLedger
+  ) {
+    void loadData();
+  }
+}, [
+  authLoading,
+  permissionsLoading,
+  user,
+  canViewLedger,
+  loadData,
+]);
 
 
 function updateLine(
@@ -251,8 +271,27 @@ setNextId((previous) => previous + 1);
     }
   }
 
+  if (authLoading || permissionsLoading) {
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
+    <div className="p-8 text-sm text-muted-foreground">
+      Checking permissions...
+    </div>
+  );
+}
+
+if (!canViewLedger) {
+  return (
+    <div className="p-8">
+      <h1 className="text-xl font-semibold">Access Denied</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
+        You do not have permission to view the General Ledger.
+      </p>
+    </div>
+  );
+}
+
+return (
+  <div className="flex min-h-screen bg-background text-foreground">
       <div className="hidden md:block">
         <Sidebar />
       </div>

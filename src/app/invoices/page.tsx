@@ -22,6 +22,7 @@ import Header from "@/components/layout/Header";
 import { useRequireAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { usePermissions } from "@/lib/use-permissions";
 
 type Invoice = {
   id: string;
@@ -93,6 +94,7 @@ type Row = { invoice: Invoice; status: string };
 
 export default function InvoicesPage() {
   const { loading: authLoading } = useRequireAuth();
+   const { permissions, isAdmin } = usePermissions();
   const router = useRouter();
 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -373,15 +375,17 @@ export default function InvoicesPage() {
     );
   }
 
-  const detailProps = {
-    busyId: actionLoading,
-    onPdf: handleDownloadPDF,
-    onIssue: handleIssueInvoice,
-    onPay: openPayment,
-    onEdit: (invoice: Invoice) =>
-      router.push(`/invoices/new?edit=${invoice.id}`),
-    onDelete: handleDeleteInvoice,
-  };
+const detailProps = {
+  busyId: actionLoading,
+  onPdf: handleDownloadPDF,
+  onIssue: handleIssueInvoice,
+  onPay: openPayment,
+  onEdit: (invoice: Invoice) =>
+    router.push(`/invoices/new?edit=${invoice.id}`),
+  onDelete: handleDeleteInvoice,
+  canEdit: isAdmin || permissions["invoices.edit"],
+  canDelete: isAdmin || permissions["invoices.delete"],
+};
 
   return (
     <div className="flex min-h-screen w-full min-w-0 bg-background text-foreground">
@@ -820,6 +824,8 @@ type DetailProps = {
   onPay: (invoice: Invoice) => void;
   onEdit: (invoice: Invoice) => void;
   onDelete: (invoice: Invoice) => void;
+  canEdit: boolean;
+ canDelete: boolean;
 };
 
 function InvoiceDetail({
@@ -832,6 +838,8 @@ function InvoiceDetail({
   onPay,
   onEdit,
   onDelete,
+  canEdit,
+  canDelete
 }: DetailProps) {
   const busy = busyId === invoice.id;
   const isDraft = status === "draft";
@@ -999,28 +1007,29 @@ function InvoiceDetail({
           PDF
         </Button>
 
-        {isDraft && (
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onEdit(invoice)}
-            >
-              <Pencil className="mr-2 h-4 w-4" />
-              Edit
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="text-red-600 hover:text-red-700 dark:text-red-400"
-              disabled={busy}
-              onClick={() => onDelete(invoice)}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </Button>
-          </>
-        )}
+        {isDraft && canEdit && (
+  <Button
+    type="button"
+    variant="outline"
+    onClick={() => onEdit(invoice)}
+  >
+    <Pencil className="mr-2 h-4 w-4" />
+    Edit
+  </Button>
+)}
+
+{isDraft && canDelete && (
+  <Button
+    type="button"
+    variant="outline"
+    className="text-red-600 hover:text-red-700 dark:text-red-400"
+    disabled={busy}
+    onClick={() => onDelete(invoice)}
+  >
+    <Trash2 className="mr-2 h-4 w-4" />
+    Delete
+  </Button>
+)}
       </div>
     </div>
   );

@@ -1,26 +1,11 @@
 
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { adminAuth } from "@/lib/firebase-admin-auth";
 import { firestore } from "@/lib/firestore-rest";
-import { isAdminUid } from "@/lib/admin-uid";
-
-async function verifyAdmin() {
-  if (!adminAuth) throw new Error("ADMIN_NOT_CONFIGURED");
-
-  const cookieStore = await cookies();
-  const session = cookieStore.get("__session")?.value;
-
-  if (!session) throw new Error("UNAUTHORIZED");
-
-  const decoded = await adminAuth.verifySessionCookie(session, true);
-
-  if (!(await isAdminUid(decoded.uid))) throw new Error("FORBIDDEN");
-}
+import { requirePermission } from "@/lib/server-permissions";
 
 export async function POST() {
   try {
-    await verifyAdmin();
+    await requirePermission("notifications.view");
 
     const snapshot = await firestore
       .collection("notifications")
@@ -54,7 +39,7 @@ export async function POST() {
 
     if (message === "FORBIDDEN") {
       return NextResponse.json(
-        { error: "Admin access required." },
+        { error: "You do not have permission to update notifications." },
         { status: 403 }
       );
     }

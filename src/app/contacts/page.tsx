@@ -20,6 +20,7 @@ import Header from "@/components/layout/Header";
 import { useRequireAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { usePermissions } from "@/lib/use-permissions";
 
 type ContactType = "customer" | "vendor" | "both";
 
@@ -33,6 +34,12 @@ type Contact = {
 
 export default function ContactsPage() {
   const { loading: authLoading } = useRequireAuth();
+const {loading: permissionsLoading,permissions,isAdmin,} = usePermissions();
+
+const canView = isAdmin || permissions["contacts.view"];
+const canCreate = isAdmin || permissions["contacts.create"];
+const canEdit = isAdmin || permissions["contacts.edit"];
+const canDelete = isAdmin || permissions["contacts.delete"];
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
 const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -226,13 +233,23 @@ async function handleDelete(contact: Contact) {
       contact.type === "vendor" || contact.type === "both"
   ).length;
 
-  if (authLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin" />
-      </div>
-    );
-  }
+ if (authLoading || permissionsLoading) {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin" />
+    </div>
+  );
+}
+
+  if (!canView) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <p className="text-sm text-muted-foreground">
+        You do not have permission to view Contacts.
+      </p>
+    </div>
+  );
+}
 
   return (
   <div className="flex min-h-screen bg-background text-foreground">
@@ -252,14 +269,18 @@ async function handleDelete(contact: Contact) {
               </p>
             </div>
 
-            <Button onClick={() => {
-              setError("");
-              setSuccess("");
-              setShowForm(true);
-            }}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Contact
-            </Button>
+            {canCreate && (
+  <Button
+    onClick={() => {
+      setError("");
+      setSuccess("");
+      setShowForm(true);
+    }}
+  >
+    <Plus className="mr-2 h-4 w-4" />
+    Add Contact
+  </Button>
+)}
           </div>
 
           {error && (
@@ -299,7 +320,7 @@ async function handleDelete(contact: Contact) {
             />
           </div>
 
-          {showForm && (
+         {showForm && (editingContact ? canEdit : canCreate) && (
             <section className="rounded-xl border bg-card p-5 shadow-sm">
               <div className="mb-5 flex items-center justify-between">
                 <div>
@@ -480,7 +501,7 @@ async function handleDelete(contact: Contact) {
                     : "Add your first customer or vendor to get started."}
                 </p>
 
-                {!search && filter === "all" && (
+                {!search && filter === "all" && canCreate && (
                   <Button
                     className="mt-4"
                     onClick={() => setShowForm(true)}
@@ -532,32 +553,36 @@ async function handleDelete(contact: Contact) {
                         <td className="px-5 py-4">
                           <ContactBadge type={contact.type} />
                         </td>
-                        <td className="px-5 py-4">
+<td className="px-5 py-4">
   <div className="flex justify-end gap-2">
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      onClick={() => handleEdit(contact)}
-    >
-      <Pencil className="mr-1 h-4 w-4" />
-      Edit
-    </Button>
+    {canEdit && (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => handleEdit(contact)}
+      >
+        <Pencil className="mr-1 h-4 w-4" />
+        Edit
+      </Button>
+    )}
 
-    <Button
-      type="button"
-      variant="destructive"
-      size="sm"
-      disabled={deletingId === contact.id}
-      onClick={() => handleDelete(contact)}
-    >
-      {deletingId === contact.id ? (
-        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-      ) : (
-        <Trash2 className="mr-1 h-4 w-4" />
-      )}
-      Delete
-    </Button>
+    {canDelete && (
+      <Button
+        type="button"
+        variant="destructive"
+        size="sm"
+        disabled={deletingId === contact.id}
+        onClick={() => handleDelete(contact)}
+      >
+        {deletingId === contact.id ? (
+          <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+        ) : (
+          <Trash2 className="mr-1 h-4 w-4" />
+        )}
+        Delete
+      </Button>
+    )}
   </div>
 </td>
                       </tr>

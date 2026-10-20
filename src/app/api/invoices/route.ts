@@ -5,24 +5,33 @@ import { adminAuth } from "@/lib/firebase-admin-auth";
 import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
+import { requirePermission } from "@/lib/server-permissions";
 
-async function verifyAdmin() {
-  if (!adminAuth) {
-    throw new Error("ADMIN_NOT_CONFIGURED");
-  }
+// async function verifyAdmin() {
+//   if (!adminAuth) {
+//     throw new Error("ADMIN_NOT_CONFIGURED");
+//   }
 
-  const cookieStore = await cookies();
-  const session = cookieStore.get("__session")?.value;
+//   const cookieStore = await cookies();
+//   const session = cookieStore.get("__session")?.value;
 
-  if (!session) throw new Error("UNAUTHORIZED");
+//   if (!session) throw new Error("UNAUTHORIZED");
 
-  // Verify as session cookie (created by /api/auth/session)
-  const decoded = await adminAuth.verifySessionCookie(session, true);
+//   // Verify as session cookie (created by /api/auth/session)
+//   const decoded = await adminAuth.verifySessionCookie(session, true);
 
-  if (!(await isAdminUid(decoded.uid))) {
-    throw new Error("FORBIDDEN");
-  }
+//   if (!(await isAdminUid(decoded.uid))) {
+//     throw new Error("FORBIDDEN");
+//   }
+// }
+
+
+async function verifyInvoicePermission(
+  permission: "invoices.view" | "invoices.create"
+) {
+  await requirePermission(permission);
 }
+
 
 function handleError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
@@ -34,12 +43,12 @@ function handleError(error: unknown) {
     );
   }
 
-  if (message === "FORBIDDEN") {
-    return NextResponse.json(
-      { error: "Admin access required" },
-      { status: 403 }
-    );
-  }
+ if (message === "FORBIDDEN") {
+  return NextResponse.json(
+    { error: "You do not have permission to perform this action." },
+    { status: 403 }
+  );
+}
 
   console.error("Invoices API error:", error);
 
@@ -51,7 +60,7 @@ function handleError(error: unknown) {
 
 export async function GET() {
   try {
-    await verifyAdmin();
+    await verifyInvoicePermission("invoices.view");
 
     const snapshot = await firestore.collection("invoices").get();
 
@@ -88,7 +97,7 @@ balanceDue: data.balanceDue ?? data.total ?? 0,
 
 export async function POST(request: Request) {
   try {
-    await verifyAdmin();
+    await verifyInvoicePermission("invoices.create");
 
     const body = await request.json();
 

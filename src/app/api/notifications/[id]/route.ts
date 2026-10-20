@@ -1,29 +1,24 @@
 
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { adminAuth } from "@/lib/firebase-admin-auth";
 import { firestore } from "@/lib/firestore-rest";
-import { isAdminUid } from "@/lib/admin-uid";
+import { requirePermission } from "@/lib/server-permissions";
 
-async function verifyAdmin() {
-  if (!adminAuth) throw new Error("ADMIN_NOT_CONFIGURED");
-
-  const cookieStore = await cookies();
-  const session = cookieStore.get("__session")?.value;
-
-  if (!session) throw new Error("UNAUTHORIZED");
-
-  const decoded = await adminAuth.verifySessionCookie(session, true);
-
-  if (!(await isAdminUid(decoded.uid))) throw new Error("FORBIDDEN");
-}
+type NotificationData = {
+  title?: string;
+  message?: string;
+  type?: string;
+  link?: string;
+  entityId?: string | null;
+  isRead?: boolean;
+  createdAt?: string;
+};
 
 export async function PATCH(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await verifyAdmin();
+    await requirePermission("notifications.view");
 
     const { id } = await params;
 
@@ -62,7 +57,7 @@ export async function PATCH(
 
     if (message === "FORBIDDEN") {
       return NextResponse.json(
-        { error: "Admin access required." },
+        { error: "You do not have permission to update notifications." },
         { status: 403 }
       );
     }
@@ -71,6 +66,54 @@ export async function PATCH(
 
     return NextResponse.json(
       { error: "Unable to update notification." },
+      { status: 500 }
+    );
+  }
+}
+export async function GET() {
+  try {
+    await requirePermission("notifications.view");
+
+    const snapshot = await firestore
+      .collection("notifications")
+      .orderBy("createdAt", "desc")
+      .limit(50)
+      .get();
+
+    const notifications = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...(doc.data() as NotificationData),
+    }));
+
+    const unreadCount = notifications.filter(
+      (notification) => notification.isRead !== true
+    ).length;
+
+    return NextResponse.json(
+      { notifications, unreadCount },
+      { headers: { "Cache-Control": "no-store" } }
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+
+    if (message === "UNAUTHORIZED") {
+      return NextResponse.json(
+        { error: "Authentication required." },
+        { status: 401 }
+      );
+    }
+
+    if (message === "FORBIDDEN") {
+      return NextResponse.json(
+        { error: "You do not have permission to view notifications." },
+        { status: 403 }
+      );
+    }
+
+    console.error("Get notifications error:", error);
+
+    return NextResponse.json(
+      { error: "Unable to load notifications." },
       { status: 500 }
     );
   }

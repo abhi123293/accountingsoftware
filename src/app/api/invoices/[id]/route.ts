@@ -1,32 +1,34 @@
 
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { adminAuth } from "@/lib/firebase-admin-auth";
 import { firestore } from "@/lib/firestore-rest";
-import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
+import {requirePermission,requireAdmin,} from "@/lib/server-permissions";
 
-async function verifyAdmin() {
-  if (!adminAuth) throw new Error("ADMIN_NOT_CONFIGURED");
 
-  const cookieStore = await cookies();
-  const session = cookieStore.get("__session")?.value;
+// async function verifyAdmin() {
+//   if (!adminAuth) throw new Error("ADMIN_NOT_CONFIGURED");
 
-  if (!session) throw new Error("UNAUTHORIZED");
+//   const cookieStore = await cookies();
+//   const session = cookieStore.get("__session")?.value;
 
-  const decoded = await adminAuth.verifySessionCookie(session, true);
+//   if (!session) throw new Error("UNAUTHORIZED");
 
-  if (!(await isAdminUid(decoded.uid))) {
-    throw new Error("FORBIDDEN");
-  }
-}
+//   const decoded = await adminAuth.verifySessionCookie(session, true);
+
+//   if (!(await isAdminUid(decoded.uid))) {
+//     throw new Error("FORBIDDEN");
+//   }
+// }
 
 function handleError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
 
   const knownErrors: Record<string, { error: string; status: number }> = {
     UNAUTHORIZED: { error: "Authentication required.", status: 401 },
-    FORBIDDEN: { error: "Admin access required.", status: 403 },
+    FORBIDDEN: {
+  error: "You do not have permission to perform this action.",
+  status: 403,
+},
     INVOICE_NOT_FOUND: { error: "Invoice not found.", status: 404 },
     NOT_EDITABLE: {
       error: "Only draft invoices can be edited or deleted.",
@@ -62,7 +64,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await verifyAdmin();
+    await requirePermission("invoices.edit");
 
     const { id } = await params;
     const body = await request.json();
@@ -75,6 +77,7 @@ export async function PATCH(
 
     // Preserve the existing Issue Invoice operation.
     if (body.status === "sent") {
+  await requireAdmin();
       if (invoice.status !== "draft") {
         return NextResponse.json(
           { error: "Only draft invoices can be issued." },
@@ -246,7 +249,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await verifyAdmin();
+    await requirePermission("invoices.delete");
 
     const { id } = await params;
     const invoiceRef = firestore.collection("invoices").doc(id);

@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { adminAuth } from "@/lib/firebase-admin-auth";
 import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
+import { requirePermission } from "@/lib/server-permissions";
 
 type Account = {
   name?: string;
@@ -34,28 +35,9 @@ function isValidDate(value: string | null): value is string {
 export async function GET(request: Request) {
   try {
     // Verify the administrator session.
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get("__session")?.value;
-
-    if (!sessionCookie) {
-      return NextResponse.json(
-        { error: "Authentication required." },
-        { status: 401 }
-      );
-    }
-
-    const decoded = await adminAuth.verifySessionCookie(
-      sessionCookie,
-      true
-    );
-
-    if (!(await isAdminUid(decoded.uid))) {
-      return NextResponse.json(
-        { error: "Administrator access required." },
-        { status: 403 }
-      );
-    }
-
+   
+// Allow Admin or users granted reports.view.
+await requirePermission("reports.view");
     // Validate the requested reporting period.
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get("startDate");
@@ -181,23 +163,38 @@ export async function GET(request: Request) {
       incomeAccounts,
       expenseAccounts,
     });
-  } catch (error) {
-    console.error("Profit & Loss API error:", error);
+} catch (error) {
+  console.error("Profit & Loss API error:", error);
+
+  if (error instanceof Error) {
+    if (error.message === "UNAUTHORIZED") {
+      return NextResponse.json(
+        { error: "Authentication required." },
+        { status: 401 }
+      );
+    }
+
+    if (error.message === "FORBIDDEN") {
+      return NextResponse.json(
+        { error: "You do not have permission to view financial reports." },
+        { status: 403 }
+      );
+    }
 
     if (
-      error instanceof Error &&
-      (error.message.includes("session cookie") ||
-        error.message.includes("Session cookie"))
+      error.message.includes("session cookie") ||
+      error.message.includes("Session cookie")
     ) {
       return NextResponse.json(
         { error: "Your session has expired. Please sign in again." },
         { status: 401 }
       );
     }
-
-    return NextResponse.json(
-      { error: "Unable to generate the Profit & Loss report." },
-      { status: 500 }
-    );
   }
+
+  return NextResponse.json(
+    { error: "Unable to generate the Profit & Loss report." },
+    { status: 500 }
+  );
+}
 }

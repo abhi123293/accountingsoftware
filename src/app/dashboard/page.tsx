@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Loader2,
 } from "lucide-react";
+import { usePermissions } from "@/lib/use-permissions";
 
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
@@ -90,6 +91,14 @@ type CashFlowPoint = {
 
 
 export default function DashboardPage() {
+  const {
+  can,
+  isAdmin,
+  loading: permissionsLoading,
+} = usePermissions();
+
+const canViewDashboard =
+  isAdmin || can("dashboard.view");
   const [reportingPeriod, setReportingPeriod] =
     useState<ReportingPeriod>("this-month");
 
@@ -125,14 +134,22 @@ const [cashFlowData, setCashFlowData] =
     
 
 useEffect(() => {
-  if (!dateRange || invalidDateRange) {
+  if (permissionsLoading) return;
+
+  if (!canViewDashboard) {
     setDataLoading(false);
+    setDataError("");
     return;
   }
 
-  let cancelled = false;
+  if (!dateRange || invalidDateRange) {
+  setDataLoading(false);
+  return;
+}
 
-  async function loadDashboard() {
+let cancelled = false;
+
+async function loadDashboard() {
     setDataLoading(true);
     setDataError("");
 
@@ -352,9 +369,35 @@ setCashFlowData(calculatedCashFlow);
   return () => {
     cancelled = true;
   };
-}, [dateRange?.startDate, dateRange?.endDate, invalidDateRange]);
+}, [
+  dateRange?.startDate,
+  dateRange?.endDate,
+  invalidDateRange,
+  permissionsLoading,
+  canViewDashboard,
+]);
 
+if (permissionsLoading) {
+  return (
+    <div className="p-8 text-sm text-muted-foreground">
+      Checking permissions...
+    </div>
+  );
+}
 
+if (!canViewDashboard) {
+  return (
+    <div className="p-8">
+      <h1 className="text-xl font-semibold">
+        Access Denied
+      </h1>
+
+      <p className="mt-2 text-sm text-muted-foreground">
+        You do not have permission to view the Dashboard.
+      </p>
+    </div>
+  );
+}
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <div className="hidden md:block">

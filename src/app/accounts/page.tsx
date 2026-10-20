@@ -17,7 +17,7 @@ import { useRequireAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createNotification } from "@/lib/notifications";
+import { usePermissions } from "@/lib/use-permissions";
 
 type AccountType =
   | "asset"
@@ -50,6 +50,16 @@ const emptyForm = {
 
 export default function AccountsPage() {
   const { user, loading: authLoading } = useRequireAuth();
+  const {
+  loading: permissionsLoading,
+  permissions,
+  isAdmin,
+} = usePermissions();
+
+const canView = isAdmin || permissions["accounts.view"];
+const canCreate = isAdmin || permissions["accounts.create"];
+const canEdit = isAdmin || permissions["accounts.edit"];
+const canDelete = isAdmin || permissions["accounts.delete"];
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,11 +99,17 @@ const [message, setMessage] = useState("");
     }
   }, []);
 
-  useEffect(() => {
-    if (!authLoading && user) {
-      void loadAccounts();
-    }
-  }, [authLoading, user, loadAccounts]);
+useEffect(() => {
+  if (!authLoading && !permissionsLoading && user && canView) {
+    void loadAccounts();
+  }
+}, [
+  authLoading,
+  permissionsLoading,
+  user,
+  canView,
+  loadAccounts,
+]);
 
   const filteredAccounts = accounts.filter((account) => {
     const matchesSearch =
@@ -302,6 +318,24 @@ async function handleDeleteAccount(account: Account) {
 }
 
 
+if (authLoading || permissionsLoading) {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <RefreshCw className="h-6 w-6 animate-spin" />
+    </div>
+  );
+}
+
+if (!canView) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <p className="text-sm text-muted-foreground">
+        You do not have permission to view Chart of Accounts.
+      </p>
+    </div>
+  );
+}
+
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <div className="hidden md:block">
@@ -335,16 +369,20 @@ async function handleDeleteAccount(account: Account) {
                 Export CSV
               </Button>
 
-              <Button onClick={() => {
-  setError("");
-  setMessage("");
-  setEditingId(null);
-  setForm(emptyForm);
-  setShowForm((value) => !value);
-}}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Account
-              </Button>
+             {canCreate && (
+  <Button
+    onClick={() => {
+      setError("");
+      setMessage("");
+      setEditingId(null);
+      setForm(emptyForm);
+      setShowForm((value) => !value);
+    }}
+  >
+    <Plus className="mr-2 h-4 w-4" />
+    Add Account
+  </Button>
+)}
             </div>
           </section>
 
@@ -360,7 +398,7 @@ async function handleDeleteAccount(account: Account) {
             </p>
           )}
 
-          {showForm && (
+          {showForm && (editingId ? canEdit : canCreate) && (
             <section className="rounded-xl border border-border bg-card p-5">
               <h2 className="mb-4 text-lg font-semibold">
   {editingId ? "Edit Account" : "Add Account"}
@@ -521,9 +559,14 @@ onClick={() => {
                     </tr>
                   ) : filteredAccounts.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
-                        No accounts found. Add an account to get started.
-                      </td>
+                     <td
+  colSpan={5}
+  className="px-4 py-10 text-center text-muted-foreground"
+>
+  {canCreate
+    ? "No accounts found. Add an account to get started."
+    : "No accounts found."}
+</td>
                     </tr>
                   ) : (
                     filteredAccounts.map((account) => (
@@ -543,28 +586,32 @@ onClick={() => {
                         
 <td className="px-4 py-3">
   <div className="flex justify-end gap-2">
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      onClick={() => handleEditAccount(account)}
-      aria-label={`Edit ${account.name}`}
-    >
-      <Pencil className="mr-1 h-4 w-4" />
-      Edit
-    </Button>
+    {canEdit && (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => handleEditAccount(account)}
+        aria-label={`Edit ${account.name}`}
+      >
+        <Pencil className="mr-1 h-4 w-4" />
+        Edit
+      </Button>
+    )}
 
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      onClick={() => handleDeleteAccount(account)}
-      disabled={deletingId === account.id}
-      aria-label={`Delete ${account.name}`}
-    >
-      <Trash2 className="mr-1 h-4 w-4" />
-      {deletingId === account.id ? "Deleting..." : "Delete"}
-    </Button>
+    {canDelete && (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => handleDeleteAccount(account)}
+        disabled={deletingId === account.id}
+        aria-label={`Delete ${account.name}`}
+      >
+        <Trash2 className="mr-1 h-4 w-4" />
+        {deletingId === account.id ? "Deleting..." : "Delete"}
+      </Button>
+    )}
   </div>
 </td>
 

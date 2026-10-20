@@ -5,27 +5,14 @@ import { adminAuth } from "@/lib/firebase-admin-auth";
 import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
+import { requirePermission } from "@/lib/server-permissions";
 
 const ACCOUNT_TYPES = ["asset","liability","equity","revenue","expense",];
 
-async function verifyAdmin() {
-  if (!adminAuth) {
-    throw new Error("ADMIN_NOT_CONFIGURED");
-  }
-
-  const cookieStore = await cookies();
-  const session = cookieStore.get("__session")?.value;
-
-  if (!session) {
-    throw new Error("UNAUTHORIZED");
-  }
-
-  // Verify as session cookie (created by /api/auth/session)
-  const decoded = await adminAuth.verifySessionCookie(session, true);
-
-  if (!(await isAdminUid(decoded.uid))) {
-    throw new Error("FORBIDDEN");
-  }
+async function verifyLedgerPermission(
+  permission: "ledger.view" | "ledger.create"
+) {
+  await requirePermission(permission);
 }
 
 function handleError(error: unknown) {
@@ -36,12 +23,12 @@ function handleError(error: unknown) {
     );
   }
 
-  if (error instanceof Error && error.message === "FORBIDDEN") {
-    return NextResponse.json(
-      { error: "Administrator access required." },
-      { status: 403 }
-    );
-  }
+ if (error instanceof Error && error.message === "FORBIDDEN") {
+  return NextResponse.json(
+    { error: "You do not have permission to perform this action." },
+    { status: 403 }
+  );
+}
 
   console.error("Ledger API error:", error);
 
@@ -53,7 +40,7 @@ function handleError(error: unknown) {
 
 export async function GET() {
   try {
-    await verifyAdmin();
+    await verifyLedgerPermission("ledger.view");
 
     const snapshot = await firestore
       .collection("transactions")
@@ -74,7 +61,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    await verifyAdmin();
+    await verifyLedgerPermission("ledger.create");
 
     const body = await request.json();
     const date = typeof body.date === "string" ? body.date : "";

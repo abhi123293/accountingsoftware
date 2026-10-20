@@ -1,11 +1,13 @@
 
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Bell, CheckCheck, X } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import MobileSidebar from "./MobileSidebar";
+import { useAuth } from "@/lib/auth-context";
+import { usePermissions } from "@/lib/use-permissions";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -31,6 +33,11 @@ type NotificationItem = {
 export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const { can, loading: permissionsLoading } = usePermissions();
+  const canViewNotifications = can("notifications.view");
+  const userUid = user?.uid;
+  const blockedUid = useRef<string | null>(null);
   const pageTitle = pageTitles[pathname] ?? "Dashboard";
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -40,12 +47,25 @@ export default function Header() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const loadNotifications = useCallback(async () => {
+    if (
+      authLoading ||
+      permissionsLoading ||
+      !userUid ||
+      !canViewNotifications ||
+      blockedUid.current === userUid
+    ) {
+      return;
+    }
+
     try {
       const response = await fetch("/api/notifications", {
         cache: "no-store",
       });
 
-      if (response.status === 401 || response.status === 403) return;
+      if (response.status === 401 || response.status === 403) {
+        blockedUid.current = userUid;
+        return;
+      }
       if (!response.ok) return;
 
       const data = await response.json();
@@ -57,17 +77,35 @@ export default function Header() {
     } catch (error) {
       console.error("Unable to load notifications:", error);
     }
-  }, []);
+  }, [authLoading, canViewNotifications, permissionsLoading, userUid]);
 
   useEffect(() => {
-    void loadNotifications();
+    if (authLoading || permissionsLoading || !userUid) {
+      blockedUid.current = null;
+      return;
+    }
+
+    if (!canViewNotifications) return;
+
+    const initialLoad = window.setTimeout(() => {
+      void loadNotifications();
+    }, 0);
 
     const interval = window.setInterval(() => {
       void loadNotifications();
     }, 30_000);
 
-    return () => window.clearInterval(interval);
-  }, [loadNotifications]);
+    return () => {
+      window.clearTimeout(initialLoad);
+      window.clearInterval(interval);
+    };
+  }, [
+    authLoading,
+    canViewNotifications,
+    loadNotifications,
+    permissionsLoading,
+    userUid,
+  ]);
 
   const markAllRead = async () => {
     setLoading(true);
@@ -161,6 +199,7 @@ export default function Header() {
       </div>
 
       <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+        {canViewNotifications && (
         <div className="relative">
           <button
             type="button"
@@ -269,6 +308,7 @@ export default function Header() {
             </div>
           )}
         </div>
+        )}
 
         <ThemeToggle />
 
