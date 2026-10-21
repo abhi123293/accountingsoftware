@@ -43,6 +43,7 @@ export default function Header() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [profileFirstName, setProfileFirstName] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
+  const [inAppEnabled, setInAppEnabled] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -70,6 +71,15 @@ export default function Header() {
       if (!response.ok) return;
 
       const data = await response.json();
+      if (data.inAppEnabled === false) {
+  setInAppEnabled(false);
+  setNotifications([]);
+  setUnreadCount(0);
+  setIsOpen(false);
+  return;
+}
+
+setInAppEnabled(true);
 
       setNotifications(
         Array.isArray(data.notifications) ? data.notifications : []
@@ -129,6 +139,39 @@ export default function Header() {
       setLoading(false);
     }
   };
+
+  
+const clearAllNotifications = async () => {
+  const confirmed = window.confirm(
+    "Clear all notifications from your list? This will not affect other users."
+  );
+
+  if (!confirmed) return;
+
+  setLoading(true);
+
+  try {
+    const response = await fetch("/api/notifications/clear-all", {
+      method: "POST",
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Unable to clear notifications.");
+    }
+
+    setNotifications([]);
+    setUnreadCount(0);
+    setIsOpen(false);
+  } catch (error) {
+    console.error("Unable to clear notifications:", error);
+    await loadNotifications();
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const openNotification = async (item: NotificationItem) => {
     setUpdatingId(item.id);
@@ -239,7 +282,7 @@ window.addEventListener("profile-updated", loadProfile);
       </div>
 
       <div className="flex shrink-0 items-center gap-2 sm:gap-4">
-        {canViewNotifications && (
+       {canViewNotifications && inAppEnabled && (
         <div className="relative">
           <button
             type="button"
@@ -267,6 +310,18 @@ window.addEventListener("profile-updated", loadProfile);
                 </div>
 
                 <div className="flex items-center gap-1">
+                  
+{notifications.length > 0 && (
+  <button
+    type="button"
+    onClick={() => void clearAllNotifications()}
+    disabled={loading}
+    className="rounded-md px-2 py-1 text-xs font-medium text-destructive hover:bg-accent disabled:opacity-50"
+  >
+    Clear All
+  </button>
+)}
+
                   {unreadCount > 0 && (
                     <button
                       type="button"

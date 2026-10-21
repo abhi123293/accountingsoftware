@@ -53,18 +53,25 @@ export function normalizePermissions(value: unknown): PermissionMap {
   for (const { key } of PERMISSION_DEFINITIONS) result[key] = input[key] === true;
 
   // Editing/export/import actions imply that the user can open and view that section.
-  const implications: Array<[PermissionKey, PermissionKey[]]> = [
-   ["invoices.view", ["invoices.create", "invoices.edit", "invoices.delete"]],
+const implications: Array<[PermissionKey, PermissionKey[]]> = [
+  ["invoices.view", ["invoices.create", "invoices.edit", "invoices.delete"]],
   ["contacts.view", ["contacts.create", "contacts.edit", "contacts.delete"]],
   ["accounts.view", ["accounts.create", "accounts.edit", "accounts.delete"]],
-    ["reports.view", ["reports.export"]],
-    ["settings.profile.view", ["settings.profile.edit"]],
-    ["settings.notifications.view", ["settings.notifications.edit"]],
-    ["settings.appearance.view", ["settings.appearance.edit"]],
-    ["settings.security.view", ["settings.security.edit"]],
-    ["settings.company.view", ["settings.company.edit"]],
-    ["settings.advanced.view", ["settings.advanced.export", "settings.advanced.import", "settings.advanced.deleteData"]],
-  ];
+  ["reports.view", ["reports.export"]],
+  ["settings.profile.view", ["settings.profile.edit"]],
+  ["settings.notifications.view", ["settings.notifications.edit"]],
+  ["settings.appearance.view", ["settings.appearance.edit"]],
+  ["settings.security.view", ["settings.security.edit"]],
+  ["settings.company.view", ["settings.company.edit"]],
+  [
+    "settings.advanced.view",
+    [
+      "settings.advanced.export",
+      "settings.advanced.import",
+      "settings.advanced.deleteData",
+    ],
+  ],
+];
   for (const [viewKey, actionKeys] of implications) {
     if (actionKeys.some((key) => result[key])) result[viewKey] = true;
   }

@@ -124,6 +124,7 @@ export default function SettingsPage() {
 } = usePermissions();
 const canViewProfile = isAdmin || can("settings.profile.view");
 const canViewNotifications = isAdmin || can("settings.notifications.view");
+const canEditNotifications = isAdmin || can("settings.notifications.edit");
 const canViewAppearance = isAdmin || can("settings.appearance.view");
 const canViewSecurity = isAdmin || can("settings.security.view");
 const canViewCompany = isAdmin || can("settings.company.view");
@@ -138,6 +139,19 @@ const [profileForm, setProfileForm] = useState({
 });
 
 const [profileLoading, setProfileLoading] = useState(true);
+
+const [notificationPreferences, setNotificationPreferences] = useState({
+  inAppEnabled: true,
+});
+const [notificationPreferencesLoading, setNotificationPreferencesLoading] =
+  useState(false);
+const [notificationPreferencesSaving, setNotificationPreferencesSaving] =
+  useState(false);
+const [notificationPreferencesError, setNotificationPreferencesError] =
+  useState("");
+const [notificationPreferencesSaved, setNotificationPreferencesSaved] =
+  useState(false);
+
 const [profileError, setProfileError] = useState("");
 
   const [passwordOpen, setPasswordOpen] = useState(false);
@@ -1233,6 +1247,97 @@ const handleSaveProfile = async () => {
     setSaving(false);
   }
 };
+
+
+useEffect(() => {
+  if (!user || !canViewNotifications) return;
+
+  let cancelled = false;
+
+  async function loadNotificationPreferences() {
+    setNotificationPreferencesLoading(true);
+    setNotificationPreferencesError("");
+
+    try {
+      const response = await fetch("/api/notification-preferences", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("Unable to load notification preferences.");
+      }
+
+      const data = await response.json();
+
+      if (!cancelled && data.preferences) {
+        setNotificationPreferences({
+          inAppEnabled: data.preferences.inAppEnabled === true,
+        });
+      }
+    } catch (error) {
+      if (!cancelled) {
+        setNotificationPreferencesError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load notification preferences."
+        );
+      }
+    } finally {
+      if (!cancelled) setNotificationPreferencesLoading(false);
+    }
+  }
+
+  void loadNotificationPreferences();
+
+  return () => {
+    cancelled = true;
+  };
+}, [user, canViewNotifications]);
+
+async function updateNotificationPreference(
+  key: "emailEnabled" | "inAppEnabled",
+  value: boolean
+) {
+  const previous = notificationPreferences;
+
+  setNotificationPreferences((current) => ({
+    ...current,
+    [key]: value,
+  }));
+  setNotificationPreferencesSaving(true);
+  setNotificationPreferencesSaved(false);
+  setNotificationPreferencesError("");
+
+  try {
+    const response = await fetch("/api/notification-preferences", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [key]: value }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.error || "Unable to save notification preferences."
+      );
+    }
+
+    setNotificationPreferences(data.preferences);
+    setNotificationPreferencesSaved(true);
+  } catch (error) {
+    setNotificationPreferences(previous);
+    setNotificationPreferencesError(
+      error instanceof Error
+        ? error.message
+        : "Unable to save notification preferences."
+    );
+  } finally {
+    setNotificationPreferencesSaving(false);
+  }
+}
+
+
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <div className="hidden md:block">
@@ -1414,7 +1519,7 @@ const handleSaveProfile = async () => {
     </Card>
   </TabsContent>
 )}
-
+{canViewNotifications && (
             <TabsContent value="notifications" className="mt-6 space-y-6">
               <Card>
                 <CardHeader>
@@ -1422,28 +1527,73 @@ const handleSaveProfile = async () => {
                   <CardDescription>Choose how and when you receive notifications</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {[
-                    { label: "Email Notifications", desc: "Receive email notifications for important updates", icon: Mail },
-                    { label: "Invoice Reminders", desc: "Get reminded when invoices are due or overdue", icon: DollarSign },
-                    { label: "Payment Confirmations", desc: "Receive confirmation when payments are received", icon: Check },
-                    { label: "Weekly Reports", desc: "Get weekly summary of your financial activity", desc2: true },
-                    { label: "Security Alerts", desc: "Get notified of suspicious login attempts", icon: Shield },
-                    { label: "System Updates", desc: "Receive announcements about new features", icon: Globe },
-                  ].map((item, i) => (
-                    <div key={i} className="flex items-center justify-between py-3 border-b border-border/50 last:border-0">
-                      <div className="flex items-center gap-3">
-                        {item.icon && <item.icon className="h-5 w-5 text-muted-foreground" />}
-                        <div>
-                          <p className="font-medium text-foreground">{item.label}</p>
-                          {item.desc && <p className="text-sm text-muted-foreground">{item.desc}</p>}
-                        </div>
-                      </div>
-                      <Switch defaultChecked />
-                    </div>
-                  ))}
+                 
+<div className="flex items-center justify-between gap-4 border-b border-border/50 py-4">
+  {/* <div className="flex items-center gap-3">
+    <Mail className="h-5 w-5 text-muted-foreground" />
+    <div>
+      <p className="font-medium text-foreground">Email Notifications</p>
+      <p className="text-sm text-muted-foreground">
+        Receive important updates by email.
+      </p>
+    </div>
+  </div> */}
+
+  {/* <Switch
+    checked={notificationPreferences.emailEnabled}
+    onCheckedChange={(checked) =>
+      void updateNotificationPreference("emailEnabled", checked)
+    }
+    disabled={
+      !canEditNotifications ||
+      notificationPreferencesLoading ||
+      notificationPreferencesSaving
+    }
+    aria-label="Email Notifications"
+  /> */}
+</div>
+
+<div className="flex items-center justify-between gap-4 py-4">
+  <div className="flex items-center gap-3">
+    <Bell className="h-5 w-5 text-muted-foreground" />
+    <div>
+      <p className="font-medium text-foreground">In-App Notifications</p>
+      <p className="text-sm text-muted-foreground">
+        Show notifications in the header bell.
+      </p>
+    </div>
+  </div>
+
+  <Switch
+    checked={notificationPreferences.inAppEnabled}
+    onCheckedChange={(checked) =>
+      void updateNotificationPreference("inAppEnabled", checked)
+    }
+    disabled={
+      !canEditNotifications ||
+      notificationPreferencesLoading ||
+      notificationPreferencesSaving
+    }
+    aria-label="In-App Notifications"
+  />
+</div>
+
+{notificationPreferencesError && (
+  <p role="alert" className="text-sm text-destructive">
+    {notificationPreferencesError}
+  </p>
+)}
+
+{notificationPreferencesSaved && (
+  <p role="status" className="text-sm text-muted-foreground">
+    Notification preferences saved.
+  </p>
+)}
+
                 </CardContent>
               </Card>
             </TabsContent>
+            )}
 
             <TabsContent value="appearance" className="mt-6 space-y-6">
               <Card>

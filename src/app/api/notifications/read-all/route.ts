@@ -5,11 +5,11 @@ import { requirePermission } from "@/lib/server-permissions";
 
 export async function POST() {
   try {
-    await requirePermission("notifications.view");
+    const access = await requirePermission("notifications.view");
 
     const snapshot = await firestore
       .collection("notifications")
-      .where("isRead", "==", false)
+      .orderBy("createdAt", "desc")
       .limit(450)
       .get();
 
@@ -17,7 +17,19 @@ export async function POST() {
       const batch = firestore.batch();
 
       snapshot.docs.forEach((doc) => {
-        batch.update(doc.ref, { isRead: true });
+        const stateId = `${access.uid}_${doc.id}`;
+
+       batch.set(
+  firestore
+    .collection("userNotificationStates")
+    .doc(stateId),
+  {
+    userId: access.uid,
+    notificationId: doc.id,
+    isRead: true,
+    updatedAt: new Date().toISOString(),
+  }
+);
       });
 
       await batch.commit();

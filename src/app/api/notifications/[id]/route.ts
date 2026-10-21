@@ -13,13 +13,13 @@ type NotificationData = {
   createdAt?: string;
 };
 
+
 export async function PATCH(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requirePermission("notifications.view");
-
+    const access = await requirePermission("notifications.view");
     const { id } = await params;
 
     if (!id || id.includes("/")) {
@@ -29,6 +29,7 @@ export async function PATCH(
       );
     }
 
+    // Confirm that the notification exists.
     const notificationRef = firestore
       .collection("notifications")
       .doc(id);
@@ -42,7 +43,18 @@ export async function PATCH(
       );
     }
 
-    await notificationRef.update({ isRead: true });
+    // Save the read status separately for this user.
+    const stateId = `${access.uid}_${id}`;
+
+    await firestore
+      .collection("userNotificationStates")
+      .doc(stateId)
+      .set({
+        userId: access.uid,
+        notificationId: id,
+        isRead: true,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -70,6 +82,7 @@ export async function PATCH(
     );
   }
 }
+
 export async function GET() {
   try {
     await requirePermission("notifications.view");
