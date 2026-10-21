@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { firestore } from "@/lib/firestore-rest";
 import { createNotification } from "@/lib/notifications";
 import {requirePermission,requireAdmin,} from "@/lib/server-permissions";
+import {getInvoiceTaxSettings,calculateInvoiceTotals,} from "@/lib/invoice-tax";
 
 
 // async function verifyAdmin() {
@@ -114,7 +115,11 @@ export async function PATCH(
     const dueDate =
       typeof body.dueDate === "string" ? body.dueDate : "";
     const items = body.items;
-    const taxRate = Number(body.taxRate ?? 0);
+    const taxSettings = await getInvoiceTaxSettings();
+
+const taxRate = Number(
+  body.taxRate ?? taxSettings.defaultTaxRate
+);
 
     if (
       !customerId ||
@@ -208,27 +213,33 @@ export async function PATCH(
       });
     }
 
-    const subtotalCents = normalizedItems.reduce(
-      (sum, item) => sum + Math.round(item.lineTotal * 100),
-      0
-    );
-    const taxCents = Math.round(subtotalCents * taxRate / 100);
-    const totalCents = subtotalCents + taxCents;
+const totals = calculateInvoiceTotals(
+  normalizedItems,
+  taxRate,
+  taxSettings.pricingMode
+);
 
-    await invoiceRef.update({
-      customerId,
-      customerName: String(customer.name ?? ""),
-      issueDate,
-      dueDate,
-      items: normalizedItems,
-      subtotal: subtotalCents / 100,
-      taxRate,
-      tax: taxCents / 100,
-      total: totalCents / 100,
-      amountPaid: 0,
-      balanceDue: totalCents / 100,
-      updatedAt: new Date().toISOString(),
-    });
+   await invoiceRef.update({
+  customerId,
+  customerName: String(customer.name ?? ""),
+  issueDate,
+  dueDate,
+  items: normalizedItems,
+  subtotal: totals.subtotal,
+  taxRate,
+  tax: totals.tax,
+  total: totals.total,
+
+  taxSettingsSnapshot: {
+    pricingMode: taxSettings.pricingMode,
+    taxSummary: taxSettings.taxSummary,
+    enabledTaxes: taxSettings.enabledTaxes,
+  },
+
+  amountPaid: 0,
+  balanceDue: totals.total,
+  updatedAt: new Date().toISOString(),
+});
 
     await createNotification({
       title: "Invoice updated",

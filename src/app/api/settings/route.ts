@@ -90,10 +90,29 @@ export async function POST(request: Request) {
       typeof body.registrationNumber === "string"
         ? body.registrationNumber.trim()
         : "";
-    const logoUrl =
-      typeof body.logoUrl === "string" ? body.logoUrl.trim() : "";
-    const logoPath =
-      typeof body.logoPath === "string" ? body.logoPath.trim() : "";
+   
+
+const logoDataUrl =
+  typeof body.logoDataUrl === "string"
+    ? body.logoDataUrl
+    : "";
+
+const MAX_LOGO_DATA_URL_LENGTH = 700_000;
+
+const validLogoDataUrl =
+  /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+
+if (
+  logoDataUrl.length > MAX_LOGO_DATA_URL_LENGTH ||
+  (logoDataUrl !== "" && !validLogoDataUrl.test(logoDataUrl))
+) {
+  return NextResponse.json(
+    { error: "Invalid logo image or logo size." },
+    { status: 400 }
+  );
+}
+
+
 
     if (!businessName || businessName.length > 150) {
       return NextResponse.json(
@@ -102,12 +121,18 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return NextResponse.json(
-        { error: "A valid business email address is required." },
-        { status: 400 }
-      );
-    }
+  
+if (
+  !email ||
+  email.length > 254 ||
+  !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+) {
+  return NextResponse.json(
+    { error: "A valid business email address is required." },
+    { status: 400 }
+  );
+}
+
 
     if (phone.length > 30) {
       return NextResponse.json(
@@ -137,24 +162,19 @@ export async function POST(request: Request) {
       );
     }
 
-    if (logoUrl.length > 2000 || logoPath.length > 500) {
-      return NextResponse.json(
-        { error: "Invalid logo reference." },
-        { status: 400 }
-      );
-    }
 
-    const data = {
-      businessName,
-      email,
-      phone,
-      address,
-      website,
-      registrationNumber,
-      logoUrl,
-      logoPath,
-      updatedAt: new Date().toISOString(),
-    };
+  
+const data = {
+  businessName,
+  email,
+  phone,
+  address,
+  website,
+  registrationNumber,
+  logoDataUrl,
+  updatedAt: new Date().toISOString(),
+};
+
 
     await ref.set(data, { merge: true });
 

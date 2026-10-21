@@ -1,29 +1,15 @@
+
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { adminAuth } from "@/lib/firebase-admin-auth";
+import {
+  getCurrentAccess,
+  requireAdmin,
+  requirePermission,
+} from "@/lib/server-permissions";
 import { firestore } from "@/lib/firestore-rest";
-import { isAdminUid } from "@/lib/admin-uid";
 
 const ALLOWED_TAXES = ["CGST", "SGST", "IGST", "VAT", "SERVICE_TAX"] as const;
 const PRICING_MODES = ["inclusive", "exclusive"] as const;
 const TAX_SUMMARY_MODES = ["itemized", "compact", "hidden"] as const;
-
-async function verifyAdmin() {
-  if (!adminAuth) {
-    throw new Error("ADMIN_NOT_CONFIGURED");
-  }
-
-  const cookieStore = await cookies();
-  const session = cookieStore.get("__session")?.value;
-
-  if (!session) throw new Error("UNAUTHORIZED");
-
-  const decoded = await adminAuth.verifySessionCookie(session, true);
-
-  if (!(await isAdminUid(decoded.uid))) {
-    throw new Error("FORBIDDEN");
-  }
-}
 
 function handleError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
@@ -37,8 +23,15 @@ function handleError(error: unknown) {
 
   if (message === "FORBIDDEN") {
     return NextResponse.json(
-      { error: "Admin access required" },
+      { error: "You do not have permission to perform this action." },
       { status: 403 }
+    );
+  }
+
+  if (message === "ADMIN_NOT_CONFIGURED") {
+    return NextResponse.json(
+      { error: "Authentication service is not configured." },
+      { status: 503 }
     );
   }
 
@@ -50,16 +43,19 @@ function handleError(error: unknown) {
   );
 }
 
-const settingsDoc = () => {
-  return firestore.collection("settings").doc("tax");
-};
+const settingsDoc = () => firestore.collection("settings").doc("tax");
 
 export async function GET() {
   try {
-    await verifyAdmin();
+    // Active admins can access all settings.
+    // Other users must have permission to create invoices.
+    const access = await getCurrentAccess();
 
-    const ref = settingsDoc();
-    const snapshot = await ref.get();
+    if (!access.isAdmin) {
+      await requirePermission("invoices.create");
+    }
+
+    const snapshot = await settingsDoc().get();
 
     return NextResponse.json({
       settings: snapshot.exists ? snapshot.data() : {},
@@ -71,11 +67,16 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    await verifyAdmin();
+    // Only admins can change global tax settings.
+    await requireAdmin();
 
-    const ref = settingsDoc();
     const body = await request.json().catch(() => null);
-    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      Array.isArray(body)
+    ) {
       return NextResponse.json(
         { error: "Invalid tax settings payload." },
         { status: 400 }
@@ -84,10 +85,12 @@ export async function POST(request: Request) {
 
     const gstin =
       typeof body.gstin === "string" ? body.gstin.trim() : "";
+
     const taxRegistrationDetails =
       typeof body.taxRegistrationDetails === "string"
         ? body.taxRegistrationDetails.trim()
         : "";
+
     const defaultTaxRate = Number(body.defaultTaxRate);
     const pricingMode = body.pricingMode;
     const taxSummary = body.taxSummary;
@@ -102,33 +105,47 @@ export async function POST(request: Request) {
 
     if (gstin && !/^[0-9A-Za-z]+$/.test(gstin)) {
       return NextResponse.json(
-        { error: "Tax identification number may only contain letters and numbers." },
+        {
+          error:
+            "Tax identification number may only contain letters and numbers.",
+        },
         { status: 400 }
       );
     }
 
     if (taxRegistrationDetails.length > 300) {
       return NextResponse.json(
-        { error: "Tax registration details must be 300 characters or fewer." },
+        {
+          error:
+            "Tax registration details must be 300 characters or fewer.",
+        },
         { status: 400 }
       );
     }
 
-    if (!Number.isFinite(defaultTaxRate) || defaultTaxRate < 0 || defaultTaxRate > 100) {
+    if (
+      !Number.isFinite(defaultTaxRate) ||
+      defaultTaxRate < 0 ||
+      defaultTaxRate > 100
+    ) {
       return NextResponse.json(
         { error: "Default tax rate must be between 0 and 100." },
         { status: 400 }
       );
     }
 
-    if (!(PRICING_MODES as readonly string[]).includes(String(pricingMode))) {
+    if (
+      !(PRICING_MODES as readonly string[]).includes(String(pricingMode))
+    ) {
       return NextResponse.json(
         { error: "Pricing mode must be inclusive or exclusive." },
         { status: 400 }
       );
     }
 
-    if (!(TAX_SUMMARY_MODES as readonly string[]).includes(String(taxSummary))) {
+    if (
+      !(TAX_SUMMARY_MODES as readonly string[]).includes(String(taxSummary))
+    ) {
       return NextResponse.json(
         { error: "Invalid tax summary preference." },
         { status: 400 }
@@ -138,7 +155,12 @@ export async function POST(request: Request) {
     if (
       !Array.isArray(enabledTaxes) ||
       enabledTaxes.length > ALLOWED_TAXES.length ||
-      enabledTaxes.some((tax) => !(ALLOWED_TAXES as readonly string[]).includes(String(tax)))
+      new Set(enabledTaxes).size !== enabledTaxes.length ||
+      enabledTaxes.some(
+        (tax: unknown) =>
+          typeof tax !== "string" ||
+          !(ALLOWED_TAXES as readonly string[]).includes(tax)
+      )
     ) {
       return NextResponse.json(
         { error: "Invalid enabled taxes list." },
@@ -152,11 +174,11 @@ export async function POST(request: Request) {
       defaultTaxRate,
       pricingMode,
       taxSummary,
-      enabledTaxes: enabledTaxes.map(String),
+      enabledTaxes,
       updatedAt: new Date().toISOString(),
     };
 
-    await ref.set(data, { merge: true });
+    await settingsDoc().set(data, { merge: true });
 
     return NextResponse.json({ settings: data });
   } catch (error) {

@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       `${encodeURIComponent(fileName)}?alt=media&token=${downloadToken}`;
 
     return NextResponse.json({ downloadURL: url, path: fileName });
-  } catch (error) {
+    } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return NextResponse.json(
         { error: "Authentication required" },
@@ -80,8 +80,14 @@ export async function POST(request: NextRequest) {
     }
 
     console.error("Logo upload error:", error);
+
     return NextResponse.json(
-      { error: "Upload failed" },
+      {
+       error:
+  error instanceof Error
+    ? `${error.name}: ${error.message}`
+    : String(error),
+      },
       { status: 500 }
     );
   }

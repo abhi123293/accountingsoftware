@@ -5,6 +5,7 @@ import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
 
+
 async function verifyAdmin() {
   if (!adminAuth) {
     throw new Error("ADMIN_NOT_CONFIGURED");

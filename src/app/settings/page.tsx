@@ -9,6 +9,7 @@ import {
   Key,
   Database,
   Mail,
+  Trash2,
   DollarSign,
   Building2,
   Save,
@@ -419,8 +420,10 @@ const [profileError, setProfileError] = useState("");
           website: str(settings.website),
           registrationNumber: str(settings.registrationNumber),
         });
-        setLogoUrl(str(settings.logoUrl));
-        setLogoPath(str(settings.logoPath));
+        setLogoUrl(
+  str(settings.logoDataUrl) || str(settings.logoUrl)
+);
+setLogoPath(str(settings.logoPath));
       } catch {
         // keep empty defaults if settings cannot be loaded
       }
@@ -761,67 +764,80 @@ const handleChangePassword = async (
     });
   };
 
-  const handleLogoChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
+ 
+const handleLogoChange = async (
+  event: React.ChangeEvent<HTMLInputElement>
+) => {
+  const file = event.target.files?.[0];
+  event.target.value = "";
 
-    if (!file.type.startsWith("image/")) {
-      setProfileMessage({ type: "error", text: "Please select an image file" });
-      return;
-    }
+  if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      setProfileMessage({ type: "error", text: "Logo must be less than 2MB" });
-      return;
-    }
+  if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+    setProfileMessage({
+      type: "error",
+      text: "Please select a PNG, JPG, or WebP image.",
+    });
+    return;
+  }
 
-    setLogoUploading(true);
-    setProfileMessage(null);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
+  // Base64 increases the file size by approximately 33%.
+  // Keep the image small enough for a Firestore document.
+  if (file.size > 500 * 1024) {
+    setProfileMessage({
+      type: "error",
+      text: "Logo must be 500 KB or smaller.",
+    });
+    return;
+  }
 
-      const response = await fetch("/api/upload-logo", {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
-      const data = await response.json();
-    if (!response.ok) {
-  const errorData = await response.json().catch(() => null);
+  setLogoUploading(true);
+  setProfileMessage(null);
 
-  console.error("Logo upload API error:", {
-    status: response.status,
-    error: errorData,
-  });
+  try {
+    const logoDataUrl: string = await new Promise(
+      (resolve, reject) => {
+        const reader = new FileReader();
 
-  throw new Error(
-    errorData?.error ||
-    errorData?.message ||
-    `Upload failed with status ${response.status}`
-  );
-}
-      setLogoUrl(data.downloadURL);
-      setLogoPath(data.path);
-      setProfileMessage({
-        type: "success",
-        text: "Logo uploaded. Click Save Changes to apply it.",
-      });
-    } catch (error) {
-  console.error("Logo upload failed:", error);
+        reader.onload = () => {
+          if (typeof reader.result !== "string") {
+            reject(new Error("Unable to read the selected image."));
+            return;
+          }
 
-  setProfileMessage({
-    type: "error",
-    text:
-      error instanceof Error
-        ? error.message
-        : "Logo upload failed. Check the server logs.",
-  });
-} finally {
-  setLogoUploading(false);
-}
-  };
+          resolve(reader.result);
+        };
+
+        reader.onerror = () => {
+          reject(new Error("Failed to read the selected image."));
+        };
+
+        reader.readAsDataURL(file);
+      }
+    );
+
+    setLogoUrl(logoDataUrl);
+
+    // Clear the old Storage reference if this state is still used.
+    setLogoPath("");
+
+    setProfileMessage({
+      type: "success",
+      text: "Logo selected. Click Save Changes to save it.",
+    });
+  } catch (error) {
+    setProfileMessage({
+      type: "error",
+      text:
+        error instanceof Error
+          ? error.message
+          : "Unable to process the logo.",
+    });
+  } finally {
+    setLogoUploading(false);
+  }
+};
+
 
   const validateProfile = () => {
     const errors: { [key: string]: string } = {};
@@ -859,59 +875,86 @@ const handleChangePassword = async (
     return errors;
   };
 
-  const handleProfileSave = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setProfileMessage(null);
+  
+const handleProfileSave = async (
+  event: React.FormEvent<HTMLFormElement>
+) => {
+  event.preventDefault();
+  setProfileMessage(null);
 
-    const errors = validateProfile();
-    setProfileErrors(errors);
-    if (Object.keys(errors).length > 0) {
-      setProfileMessage({
-        type: "error",
-        text: "Please fix the highlighted fields.",
-      });
-      return;
-    }
+  const errors = validateProfile();
+  setProfileErrors(errors);
 
-    const website = profile.website.trim();
-    const payload = {
-      ...profile,
-      businessName: profile.businessName.trim(),
-      email: profile.email.trim(),
-      phone: profile.phone.trim(),
-      address: profile.address.trim(),
-      website: website && !/^https?:\/\//i.test(website) ? `https://${website}` : website,
-      registrationNumber: profile.registrationNumber.trim(),
-      logoUrl,
-      logoPath,
-    };
+  if (Object.keys(errors).length > 0) {
+    setProfileMessage({
+      type: "error",
+      text: "Please fix the highlighted fields.",
+    });
+    return;
+  }
 
-    setProfileSaving(true);
-    setProfileSaved(false);
-    try {
-      const response = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Save failed");
-      }
+  const website = profile.website.trim();
 
-      setProfile((prev) => ({ ...prev, website: payload.website }));
-      setProfileMessage({ type: "success", text: "Business profile saved." });
-      setProfileSaved(true);
-      setTimeout(() => setProfileSaved(false), 3000);
-    } catch (error) {
-      setProfileMessage({
-        type: "error",
-        text: error instanceof Error ? error.message : "Save failed",
-      });
-    } finally {
-      setProfileSaving(false);
-    }
+  const normalizedWebsite =
+    website && !/^https?:\/\//i.test(website)
+      ? `https://${website}`
+      : website;
+
+  const payload = {
+    ...profile,
+    businessName: profile.businessName.trim(),
+    email: profile.email.trim(),
+    phone: profile.phone.trim(),
+    address: profile.address.trim(),
+    website: normalizedWebsite,
+    registrationNumber: profile.registrationNumber.trim(),
+    logoDataUrl: logoUrl,
   };
+
+  setProfileSaving(true);
+  setProfileSaved(false);
+
+  try {
+    const response = await fetch("/api/settings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to save business settings.");
+    }
+
+    setProfile((prev) => ({
+      ...prev,
+      website: normalizedWebsite,
+    }));
+
+    setProfileMessage({
+      type: "success",
+      text: "Business profile saved successfully.",
+    });
+
+    setProfileSaved(true);
+    setTimeout(() => setProfileSaved(false), 3000);
+  } catch (error) {
+    setProfileMessage({
+      type: "error",
+      text:
+        error instanceof Error
+          ? error.message
+          : "Failed to save business settings.",
+    });
+  } finally {
+    setProfileSaving(false);
+  }
+};
+
 
   const updateTaxField = (
     field: keyof typeof tax,
@@ -1428,7 +1471,7 @@ async function updateNotificationPreference(
 )}
 
 {canViewCompany && (
-  <TabsTrigger value="company">Company</TabsTrigger>
+  <TabsTrigger value="company">Business Profile</TabsTrigger>
 )}
 
 {canViewAdvanced && (
@@ -2129,48 +2172,81 @@ async function updateNotificationPreference(
                       </div>
                     )}
 
-                    <div className="flex items-center gap-4">
-                      <div className="h-16 w-16 overflow-hidden rounded-lg border border-border bg-muted flex items-center justify-center">
-                        {logoUrl ? (
-                          <img
-                            src={logoUrl}
-                            alt="Business logo"
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <Building2 className="h-6 w-6 text-muted-foreground" />
-                        )}
-                      </div>
-                      <div className="flex flex-col items-start gap-2">
-                        <input
-                          ref={logoFileRef}
-                          type="file"
-                          accept="image/*"
-                          onChange={handleLogoChange}
-                          className="sr-only"
-                          disabled={logoUploading}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => logoFileRef.current?.click()}
-                          disabled={logoUploading}
-                        >
-                          {logoUploading ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Uploading...
-                            </>
-                          ) : (
-                            "Upload Logo"
-                          )}
-                        </Button>
-                        <p className="text-xs text-muted-foreground">
-                          JPG or PNG, up to 2MB
-                        </p>
-                      </div>
-                    </div>
+                   
+<div className="flex items-center gap-4">
+  <div className="h-16 w-16 overflow-hidden rounded-lg border border-border bg-muted flex items-center justify-center">
+    {logoUrl ? (
+      <img
+        src={logoUrl}
+        alt="Business logo"
+        className="h-full w-full object-contain"
+      />
+    ) : (
+      <Building2 className="h-6 w-6 text-muted-foreground" />
+    )}
+  </div>
+
+  <div className="flex flex-col items-start gap-2">
+    <input
+      ref={logoFileRef}
+      type="file"
+      accept="image/png,image/jpeg,image/webp"
+      onChange={handleLogoChange}
+      className="sr-only"
+      disabled={logoUploading || profileSaving}
+    />
+
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          if (!logoUploading && !profileSaving) {
+            logoFileRef.current?.click();
+          }
+        }}
+        disabled={logoUploading || profileSaving}
+      >
+        {logoUploading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Processing...
+          </>
+        ) : logoUrl ? (
+          "Change Logo"
+        ) : (
+          "Upload Logo"
+        )}
+      </Button>
+
+      {logoUrl && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={logoUploading || profileSaving}
+          onClick={() => {
+            setLogoUrl("");
+            setLogoPath("");
+            setProfileMessage({
+              type: "success",
+              text: "Logo removed. Click Save Changes to confirm removal.",
+            });
+          }}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Remove Logo
+        </Button>
+      )}
+    </div>
+
+    <p className="text-xs text-muted-foreground">
+      PNG, JPG, or WebP, up to 500 KB.
+    </p>
+  </div>
+</div>
+
 
                     <Separator />
 

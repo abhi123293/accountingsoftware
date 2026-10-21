@@ -30,6 +30,12 @@ type InvoiceItem = {
   quantity: number;
   unitPrice: number;
 };
+type TaxSettings = {
+  defaultTaxRate: number;
+  pricingMode: "inclusive" | "exclusive";
+  taxSummary: "itemized" | "compact" | "hidden";
+  enabledTaxes: string[];
+};
 
 const today = () => {
   const date = new Date();
@@ -62,6 +68,15 @@ useEffect(() => {
   const [issueDate, setIssueDate] = useState(today());
   const [dueDate, setDueDate] = useState(today());
   const [taxRate, setTaxRate] = useState(0);
+
+const [taxSettings, setTaxSettings] = useState<TaxSettings>({
+  defaultTaxRate: 0,
+  pricingMode: "exclusive",
+  taxSummary: "itemized",
+  enabledTaxes: [],
+});
+
+const [taxSettingsLoading, setTaxSettingsLoading] = useState(true);
   const [items, setItems] = useState<InvoiceItem[]>([
     { description: "", quantity: 1, unitPrice: 0 },
   ]);
@@ -162,13 +177,97 @@ useEffect(() => {
   };
 }, [authLoading, customersLoading, editId]);
 
-  const subtotal = items.reduce(
-    (sum, item) =>
-      sum + Math.max(0, item.quantity) * Math.max(0, item.unitPrice),
-    0
-  );
-  const tax = subtotal * taxRate / 100;
-  const total = subtotal + tax;
+useEffect(() => {
+  if (authLoading) return;
+
+  let cancelled = false;
+
+  async function loadTaxSettings() {
+    try {
+      const response = await fetch("/api/tax-settings");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Unable to load tax settings."
+        );
+      }
+
+      const settings = data.settings ?? {};
+
+      if (cancelled) return;
+
+      const loadedSettings: TaxSettings = {
+        defaultTaxRate: Number(settings.defaultTaxRate ?? 0),
+        pricingMode:
+          settings.pricingMode === "inclusive"
+            ? "inclusive"
+            : "exclusive",
+      taxSummary:
+  settings.taxSummary === "itemized" ||
+  settings.taxSummary === "compact" ||
+  settings.taxSummary === "hidden"
+    ? settings.taxSummary
+    : "itemized",
+        enabledTaxes: Array.isArray(settings.enabledTaxes)
+          ? settings.enabledTaxes
+          : [],
+      };
+
+      setTaxSettings(loadedSettings);
+
+      // Apply the default only when creating a new invoice.
+      // Existing draft invoices retain their saved tax rate.
+      if (!editId) {
+        setTaxRate(loadedSettings.defaultTaxRate);
+      }
+    } catch (err) {
+      if (!cancelled) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load tax settings."
+        );
+      }
+    } finally {
+      if (!cancelled) {
+        setTaxSettingsLoading(false);
+      }
+    }
+  }
+
+  void loadTaxSettings();
+
+  return () => {
+    cancelled = true;
+  };
+}, [authLoading, editId]);
+
+ const enteredSubtotal = items.reduce(
+  (sum, item) =>
+    sum +
+    Math.max(0, item.quantity) *
+      Math.max(0, item.unitPrice),
+  0
+);
+
+const taxMultiplier = 1 + taxRate / 100;
+
+const subtotal =
+  taxSettings.pricingMode === "inclusive" && taxMultiplier > 0
+    ? enteredSubtotal / taxMultiplier
+    : enteredSubtotal;
+
+const tax =
+  taxSettings.pricingMode === "inclusive"
+    ? enteredSubtotal - subtotal
+    : subtotal * taxRate / 100;
+
+const total =
+  taxSettings.pricingMode === "inclusive"
+    ? enteredSubtotal
+    : subtotal + tax;
+   
 
   function updateItem(
     index: number,
@@ -478,39 +577,49 @@ return (
             </section>
 
             <section className="ml-auto max-w-md space-y-4 rounded-xl border bg-card p-5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Subtotal</span>
-                <span className="font-medium">{money(subtotal)}</span>
-              </div>
 
-              <div className="flex items-center justify-between gap-4">
-                <label htmlFor="tax-rate" className="text-sm text-muted-foreground">
-                  Tax (%)
-                </label>
-                <Input
-                  id="tax-rate"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={taxRate}
-                  onChange={(event) => setTaxRate(Number(event.target.value))}
-                  className="w-28"
-                />
-              </div>
+  {/* Pricing mode — paste it here */}
+  <p className="text-xs text-muted-foreground">
+    Pricing mode:{" "}
+    {taxSettings.pricingMode === "inclusive"
+      ? "Tax included in item prices"
+      : "Tax added to item prices"}
+  </p>
 
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Tax Amount</span>
-                <span className="font-medium">{money(tax)}</span>
-              </div>
+  <div className="flex items-center justify-between">
+    <span className="text-sm text-muted-foreground">Subtotal</span>
+    <span className="font-medium">{money(subtotal)}</span>
+  </div>
 
-              <div className="border-t pt-4">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold">Total</span>
-                  <span className="text-xl font-bold">{money(total)}</span>
-                </div>
-              </div>
-            </section>
+  <div className="flex items-center justify-between gap-4">
+    <label htmlFor="tax-rate" className="text-sm text-muted-foreground">
+      Tax (%)
+    </label>
+    <Input
+      id="tax-rate"
+      type="number"
+      min="0"
+      max="100"
+      step="0.01"
+      value={taxRate}
+      onChange={(event) => setTaxRate(Number(event.target.value))}
+      className="w-28"
+    />
+  </div>
+
+  <div className="flex items-center justify-between">
+    <span className="text-sm text-muted-foreground">Tax Amount</span>
+    <span className="font-medium">{money(tax)}</span>
+  </div>
+
+  <div className="border-t pt-4">
+    <div className="flex items-center justify-between">
+      <span className="font-semibold">Total</span>
+      <span className="text-xl font-bold">{money(total)}</span>
+    </div>
+  </div>
+
+</section>
 
             <div className="flex justify-end gap-3">
               <Button
@@ -524,11 +633,12 @@ return (
 
               <Button
                 type="submit"
-                disabled={
-                  saving ||
-                  customersLoading ||
-                  customers.length === 0
-                }
+               disabled={
+  saving ||
+  customersLoading ||
+  taxSettingsLoading ||
+  customers.length === 0
+}
               >
                 {saving ? (
                   <>

@@ -6,6 +6,7 @@ import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
 import { createNotification } from "@/lib/notifications";
 import { requirePermission } from "@/lib/server-permissions";
+import {getInvoiceTaxSettings,calculateInvoiceTotals,} from "@/lib/invoice-tax";
 
 // async function verifyAdmin() {
 //   if (!adminAuth) {
@@ -198,45 +199,63 @@ export async function POST(request: Request) {
       });
     }
 
-    const subtotalCents = normalizedItems.reduce(
-      (sum, item) =>
-        sum + Math.round(item.lineTotal * 100),
-      0
-    );
+    // const subtotalCents = normalizedItems.reduce(
+    //   (sum, item) =>
+    //     sum + Math.round(item.lineTotal * 100),
+    //   0
+    // );
 
-    const taxRate = Number(body.taxRate ?? 0);
+   
+const taxSettings = await getInvoiceTaxSettings();
 
-    if (
-      !Number.isFinite(taxRate) ||
-      taxRate < 0 ||
-      taxRate > 100
-    ) {
-      return NextResponse.json(
-        { error: "Tax rate must be between 0 and 100." },
-        { status: 400 }
-      );
-    }
+const taxRate = Number(
+  body.taxRate ?? taxSettings.defaultTaxRate
+);
 
-    const taxCents = Math.round(subtotalCents * taxRate / 100);
-    const totalCents = subtotalCents + taxCents;
+if (
+  !Number.isFinite(taxRate) ||
+  taxRate < 0 ||
+  taxRate > 100
+) {
+  return NextResponse.json(
+    { error: "Tax rate must be between 0 and 100." },
+    { status: 400 }
+  );
+}
+
+const totals = calculateInvoiceTotals(
+  normalizedItems,
+  taxRate,
+  taxSettings.pricingMode
+);
+
 
     const invoiceNumber =
       `INV-${Date.now()}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
 
     const invoiceData = {
-      invoiceNumber,
-      customerId,
-      customerName: String(customer.name ?? ""),
-      issueDate,
-      dueDate,
-      items: normalizedItems,
-      subtotal: subtotalCents / 100,
-      taxRate,
-      tax: taxCents / 100,
-      total: totalCents / 100,
-      status: "draft",
-      createdAt: new Date().toISOString(),
-    };
+  invoiceNumber,
+  customerId,
+  customerName: String(customer.name ?? ""),
+  issueDate,
+  dueDate,
+  items: normalizedItems,
+  subtotal: totals.subtotal,
+  taxRate,
+  tax: totals.tax,
+  total: totals.total,
+
+  taxSettingsSnapshot: {
+    pricingMode: taxSettings.pricingMode,
+    taxSummary: taxSettings.taxSummary,
+    enabledTaxes: taxSettings.enabledTaxes,
+  },
+
+  status: "draft",
+  amountPaid: 0,
+  balanceDue: totals.total,
+  createdAt: new Date().toISOString(),
+};
 
     const document = await firestore
       .collection("invoices")
