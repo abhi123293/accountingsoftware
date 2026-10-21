@@ -52,6 +52,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
 import { cn } from "cn";
 import { useTheme } from "@/components/theme-provider";
 import { storage } from "@/lib/firebase-services";
@@ -127,6 +128,17 @@ const canViewAppearance = isAdmin || can("settings.appearance.view");
 const canViewSecurity = isAdmin || can("settings.security.view");
 const canViewCompany = isAdmin || can("settings.company.view");
 const canViewAdvanced = isAdmin || can("settings.advanced.view");
+
+const [profileForm, setProfileForm] = useState({
+  firstName: "",
+  lastName: "",
+  email: "",
+  phone: "",
+  bio: "",
+});
+
+const [profileLoading, setProfileLoading] = useState(true);
+const [profileError, setProfileError] = useState("");
 
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -413,6 +425,7 @@ const canViewAdvanced = isAdmin || can("settings.advanced.view");
     await new Promise((r) => setTimeout(r, 1000));
     setSaving(false);
     setSaved(true);
+    window.dispatchEvent(new Event("profile-updated"));
     setTimeout(() => setSaved(false), 3000);
   };
 
@@ -1125,6 +1138,101 @@ const canViewAdvanced = isAdmin || can("settings.advanced.view");
     }
   };
 
+
+  useEffect(() => {
+  let cancelled = false;
+
+  async function loadProfile() {
+    setProfileLoading(true);
+    setProfileError("");
+
+    try {
+      const response = await fetch("/api/profile", {
+        cache: "no-store",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to load profile.");
+      }
+
+      if (!cancelled) {
+        setProfileForm({
+          firstName: data.profile?.firstName ?? "",
+          lastName: data.profile?.lastName ?? "",
+          email: data.profile?.email ?? user?.email ?? "",
+          phone: data.profile?.phone ?? "",
+          bio: data.profile?.bio ?? "",
+        });
+      }
+    } catch (error) {
+      if (!cancelled) {
+        setProfileError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load profile."
+        );
+      }
+    } finally {
+      if (!cancelled) setProfileLoading(false);
+    }
+  }
+
+  if (user) {
+    void loadProfile();
+  } else {
+    setProfileLoading(false);
+  }
+
+  return () => {
+    cancelled = true;
+  };
+}, [user?.uid, user?.email]);
+
+
+const handleSaveProfile = async () => {
+  setSaving(true);
+  setSaved(false);
+  setProfileError("");
+
+  try {
+    const response = await fetch("/api/profile", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        firstName: profileForm.firstName,
+        lastName: profileForm.lastName,
+        phone: profileForm.phone,
+        bio: profileForm.bio,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Unable to save profile.");
+    }
+
+    setProfileForm((current) => ({
+      ...current,
+      ...data.profile,
+      email: user?.email ?? current.email,
+    }));
+
+    setSaved(true);
+  } catch (error) {
+    setProfileError(
+      error instanceof Error
+        ? error.message
+        : "Unable to save profile."
+    );
+  } finally {
+    setSaving(false);
+  }
+};
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <div className="hidden md:block">
@@ -1150,11 +1258,12 @@ const canViewAdvanced = isAdmin || can("settings.advanced.view");
           </section>
 
           <Tabs defaultValue="profile" className="w-full">
-            <TabsList
-  className={`grid w-full ${isAdmin ? "grid-cols-7" : "grid-cols-6"}`}>
-             {canViewProfile && (
+            <TabsList className={`grid w-full ${isAdmin ? "grid-cols-7" : "grid-cols-6"}`}>
+
+{canViewProfile && (
   <TabsTrigger value="profile">Profile</TabsTrigger>
 )}
+
 
 {canViewNotifications && (
   <TabsTrigger value="notifications">Notifications</TabsTrigger>
@@ -1179,58 +1288,132 @@ const canViewAdvanced = isAdmin || can("settings.advanced.view");
   </TabsTrigger>
 )}
             </TabsList>
-
-{canViewProfile && (
+            {canViewProfile && (
   <TabsContent value="profile" className="mt-6 space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Profile Information</CardTitle>
-                  <CardDescription>Manage your personal information</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="firstName">First Name</Label>
-                      <Input id="firstName" defaultValue={user?.displayName?.split(" ")[0] || "John"} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="lastName">Last Name</Label>
-                      <Input id="lastName" defaultValue={user?.displayName?.split(" ").slice(1).join(" ") || "Doe"} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <Input id="email" type="email" defaultValue={user?.email || "john@company.com"} disabled />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="phone">Phone</Label>
-                      <Input id="phone" defaultValue="+91 98765 43210" />
-                    </div>
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label htmlFor="bio">Bio</Label>
-                      <Input id="bio" defaultValue="Finance professional with 10+ years experience" />
-                    </div>
-                  </div>
-                  <div className="flex justify-end pt-4 border-t border-border">
-                    <Button onClick={handleSave} disabled={saving}>
-                      {saving ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Saving...
-                        </>
-                      ) : saved ? (
-                        <>
-                          <Check className="mr-2 h-4 w-4" />
-                          Saved
-                        </>
-                      ) : (
-                        "Save Changes"
-                      )}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
+    <Card>
+      <CardHeader>
+        <CardTitle>Profile Information</CardTitle>
+        <CardDescription>
+          Manage your personal information
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        {profileLoading ? (
+          <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading profile...
+          </div>
+        ) : (
+          <>
+            {profileError && (
+              <p role="alert" className="text-sm text-destructive">
+                {profileError}
+              </p>
             )}
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="firstName">First Name</Label>
+                <Input
+                  id="firstName"
+                  value={profileForm.firstName}
+                  onChange={(e) =>
+                    setProfileForm((current) => ({
+                      ...current,
+                      firstName: e.target.value,
+                    }))
+                  }
+                  maxLength={80}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Last Name</Label>
+                <Input
+                  id="lastName"
+                  value={profileForm.lastName}
+                  onChange={(e) =>
+                    setProfileForm((current) => ({
+                      ...current,
+                      lastName: e.target.value,
+                    }))
+                  }
+                  maxLength={80}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={profileForm.email}
+                  disabled
+                  readOnly
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone</Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  value={profileForm.phone}
+                  onChange={(e) =>
+                    setProfileForm((current) => ({
+                      ...current,
+                      phone: e.target.value,
+                    }))
+                  }
+                  maxLength={30}
+                />
+              </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="bio">Bio</Label>
+                <Input
+                  id="bio"
+                  value={profileForm.bio}
+                  onChange={(e) =>
+                    setProfileForm((current) => ({
+                      ...current,
+                      bio: e.target.value,
+                    }))
+                  }
+                  maxLength={500}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t border-border pt-4">
+              <Button
+                onClick={handleSaveProfile}
+                disabled={saving || profileLoading}
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : saved ? (
+                  <>
+                    <Check className="mr-2 h-4 w-4" />
+                    Saved
+                  </>
+                ) : (
+                  "Save Changes"
+                )}
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  </TabsContent>
+)}
 
             <TabsContent value="notifications" className="mt-6 space-y-6">
               <Card>

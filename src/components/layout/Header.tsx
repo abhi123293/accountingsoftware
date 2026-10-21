@@ -41,6 +41,7 @@ export default function Header() {
   const pageTitle = pageTitles[pathname] ?? "Dashboard";
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [profileFirstName, setProfileFirstName] = useState("");
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -184,6 +185,45 @@ export default function Header() {
     });
   };
 
+
+  useEffect(() => {
+  if (authLoading || !userUid) {
+    setProfileFirstName("");
+    return;
+  }
+
+  let cancelled = false;
+
+  const loadProfile = async () => {
+    try {
+      const response = await fetch("/api/profile", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+
+      if (!cancelled) {
+        setProfileFirstName(
+          typeof data.profile?.firstName === "string"
+            ? data.profile.firstName.trim()
+            : ""
+        );
+      }
+    } catch (error) {
+      console.error("Unable to load user profile:", error);
+    }
+  };
+window.addEventListener("profile-updated", loadProfile);
+  void loadProfile();
+
+  return () => {
+    cancelled = true;
+      window.removeEventListener("profile-updated", loadProfile);
+  };
+}, [authLoading, userUid]);
+
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background/95 px-4 backdrop-blur sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
@@ -313,11 +353,18 @@ export default function Header() {
         <ThemeToggle />
 
         <div
-          aria-label="Administrator"
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
-        >
-          A
-        </div>
+  aria-label={
+    profileFirstName
+      ? `${profileFirstName}'s profile`
+      : "User profile"
+  }
+  title={profileFirstName || user?.email || "User profile"}
+  className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
+>
+  {(profileFirstName.trim().charAt(0) ||
+    user?.email?.trim().charAt(0) ||
+    "?").toUpperCase()}
+</div>
       </div>
     </header>
   );

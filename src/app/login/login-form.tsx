@@ -80,20 +80,20 @@ export default function LoginForm() {
   }
 };
 
-  const handleForgotPassword = async () => {
-    if (!email) {
-      setErrors((prev) => ({ ...prev, email: "Please enter your email first" }));
-      setTouched((prev) => ({ ...prev, email: true }));
-      return;
-    }
-    const emailError = validateEmail(email);
-    if (emailError) {
-      setErrors((prev) => ({ ...prev, email: emailError }));
-      setTouched((prev) => ({ ...prev, email: true }));
-      return;
-    }
-    router.push(`/reset-password?email=${encodeURIComponent(email)}`);
-  };
+  // const handleForgotPassword = async () => {
+  //   if (!email) {
+  //     setErrors((prev) => ({ ...prev, email: "Please enter your email first" }));
+  //     setTouched((prev) => ({ ...prev, email: true }));
+  //     return;
+  //   }
+  //   const emailError = validateEmail(email);
+  //   if (emailError) {
+  //     setErrors((prev) => ({ ...prev, email: emailError }));
+  //     setTouched((prev) => ({ ...prev, email: true }));
+  //     return;
+  //   }
+  //   router.push(`/reset-password?email=${encodeURIComponent(email)}`);
+  // };
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background p-5 text-foreground">
@@ -160,18 +160,13 @@ export default function LoginForm() {
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-sm font-medium text-foreground">
-                  Password
-                </Label>
-                <button
-                  type="button"
-                  onClick={handleForgotPassword}
-                  className="text-sm text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
-                >
-                  Forgot password?
-                </button>
-              </div>
+              
+<div>
+  <Label htmlFor="password" className="text-sm font-medium text-foreground">
+    Password
+  </Label>
+</div>
+
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate_y-1/2 text-muted-foreground" />
                 <Input
