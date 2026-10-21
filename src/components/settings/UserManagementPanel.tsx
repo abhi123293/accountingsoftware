@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Loader2, Save, UserPlus, ShieldCheck } from "lucide-react";
+import { Loader2, Save, UserPlus, ShieldCheck,Power, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -113,6 +113,172 @@ export default function UserManagementPanel() {
     }
   }
 
+
+  
+async function toggleUserStatus(user: ManagedUser) {
+  const nextStatus = !user.isActive;
+
+  const confirmed = window.confirm(
+    `${nextStatus ? "Enable" : "Disable"} ${user.displayName || user.email}?`
+  );
+
+  if (!confirmed) return;
+
+  setMessage(null);
+  setSaving(true);
+
+  try {
+    const response = await fetch(
+      `/api/admin/users/${encodeURIComponent(user.uid)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: nextStatus }),
+      }
+    );
+
+    const body = await response.json().catch(() => ({})) as {
+      error?: string;
+      user?: ManagedUser;
+    };
+
+    if (!response.ok) {
+      throw new Error(body.error || "Unable to update account status.");
+    }
+
+    setUsers((current) =>
+      current.map((item) =>
+        item.uid === user.uid
+          ? { ...item, isActive: nextStatus }
+          : item
+      )
+    );
+
+    setMessage({
+      type: "success",
+      text: `${user.displayName || user.email} has been ${
+        nextStatus ? "enabled" : "disabled"
+      }.`,
+    });
+  } catch (error) {
+    setMessage({
+      type: "error",
+      text:
+        error instanceof Error
+          ? error.message
+          : "Unable to update account status.",
+    });
+  } finally {
+    setSaving(false);
+  }
+}
+
+
+
+async function deleteManagedUser(user: ManagedUser) {
+  const confirmed = window.confirm(
+    `Are you sure you want to permanently delete ${user.email}? This action cannot be undone.`
+  );
+
+  if (!confirmed) return;
+
+  setMessage(null);
+  setSaving(true);
+
+  try {
+    const response = await fetch(
+      `/api/admin/users/${encodeURIComponent(user.uid)}`,
+      { method: "DELETE" }
+    );
+
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(body.error || "Unable to delete user.");
+    }
+
+    setMessage({
+      type: "success",
+      text: `User ${user.email} was deleted successfully.`,
+    });
+
+    await loadUsers();
+  } catch (error) {
+    setMessage({
+      type: "error",
+      text:
+        error instanceof Error
+          ? error.message
+          : "Unable to delete user.",
+    });
+  } finally {
+    setSaving(false);
+  }
+}
+
+
+
+async function resetUserPassword(user: ManagedUser) {
+  const newPassword = window.prompt(
+    `Enter a new password for ${user.displayName || user.email}:`
+  );
+
+  if (newPassword === null) return;
+
+  if (newPassword.length < 6 || newPassword.length > 128) {
+    setMessage({
+      type: "error",
+      text: "Password must contain between 6 and 128 characters.",
+    });
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Reset the password for ${user.email}?`
+  );
+
+  if (!confirmed) return;
+
+  setMessage(null);
+  setSaving(true);
+
+  try {
+    const response = await fetch(
+      `/api/admin/users/${encodeURIComponent(user.uid)}/password`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: newPassword }),
+      }
+    );
+
+    const body = await response.json().catch(() => ({})) as {
+      error?: string;
+      message?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(body.error || "Unable to reset password.");
+    }
+
+    setMessage({
+      type: "success",
+      text: `Password reset successfully for ${user.email}.`,
+    });
+  } catch (error) {
+    setMessage({
+      type: "error",
+      text: error instanceof Error
+        ? error.message
+        : "Unable to reset password.",
+    });
+  } finally {
+    setSaving(false);
+  }
+}
+
+
+
   return (
     <div className="space-y-6">
       <Card>
@@ -187,7 +353,62 @@ export default function UserManagementPanel() {
                   <p className="break-all text-sm text-muted-foreground">{user.email}</p>
                   <p className="mt-1 text-xs text-muted-foreground">{Object.values(user.permissions ?? {}).filter(Boolean).length} permissions granted</p>
                 </div>
-                <Button type="button" variant="outline" size="sm" onClick={() => editUser(user)}>Manage permissions</Button>
+                
+<div className="flex flex-wrap items-center gap-2">
+  <span
+    className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+      user.isActive
+        ? "bg-green-500/10 text-green-700 dark:text-green-400"
+        : "bg-red-500/10 text-red-700 dark:text-red-400"
+    }`}
+  >
+    {user.isActive ? "Active" : "Disabled"}
+  </span>
+
+  
+<Button
+  type="button"
+  variant="destructive"
+  size="sm"
+  disabled={saving}
+  onClick={() => deleteManagedUser(user)}
+>
+  Delete
+</Button>
+
+
+<Button
+  type="button"
+  variant="outline"
+  size="sm"
+  disabled={saving || !user.isActive}
+  onClick={() => resetUserPassword(user)}
+>
+  Reset Password
+</Button>
+
+  <Button
+    type="button"
+    variant="outline"
+    size="sm"
+    disabled={saving}
+    onClick={() => editUser(user)}
+  >
+    Manage permissions
+  </Button>
+
+  <Button
+    type="button"
+    variant="outline"
+    size="sm"
+    disabled={saving}
+    onClick={() => toggleUserStatus(user)}
+  >
+    <Power className="mr-2 h-4 w-4" />
+    {user.isActive ? "Disable" : "Enable"}
+  </Button>
+</div>
+
               </div>
             ))}
           </div>}

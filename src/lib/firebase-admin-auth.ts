@@ -529,6 +529,213 @@ async function createSessionCookie(
   return body.sessionCookie;
 }
 
+
+// export async function resetFirebaseUserPassword(
+//   uid: string,
+//   newPassword: string
+// ): Promise<{ sessionsRevoked: boolean }> {
+
+// const account = await getServiceAccount();
+// const accessToken = await getGoogleAccessToken(account);
+
+// const projectId = account.project_id;
+
+
+//   if (!projectId) {
+//     throw new Error("FIREBASE_PROJECT_ID_MISSING");
+//   }
+
+//   const updateResponse = await fetch(
+//     `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:update`,
+//     {
+//       method: "POST",
+//       headers: {
+//         Authorization: `Bearer ${accessToken}`,
+//         "Content-Type": "application/json",
+//       },
+//       body: JSON.stringify({
+//         localId: uid,
+//         password: newPassword,
+//       }),
+//     }
+//   );
+
+//   if (!updateResponse.ok) {
+//     const errorText = await updateResponse.text();
+//     console.error("Firebase password update failed:", errorText);
+//     throw new Error("PASSWORD_RESET_FAILED");
+//   }
+
+//   // Revoke existing refresh tokens so existing sessions can be rejected
+//   // by protected routes that verify session revocation.
+//   const revokeResponse = await fetch(
+//     `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:revokeRefreshTokens`,
+//     {
+//       method: "POST",
+//       headers: {
+//         Authorization: `Bearer ${accessToken}`,
+//         "Content-Type": "application/json",
+//       },
+//       body: JSON.stringify({
+//         localId: uid,
+//       }),
+//     }
+//   );
+
+//   return {
+//     sessionsRevoked: revokeResponse.ok,
+//   };
+// }
+
+
+
+export async function resetManagedUserPassword(
+  uid: string,
+  newPassword: string
+): Promise<void> {
+  if (!uid || newPassword.length < 6 || newPassword.length > 128) {
+    throw new Error("INVALID_PASSWORD_DETAILS");
+  }
+
+  const account = await getServiceAccount();
+  const accessToken = await getGoogleAccessToken(account);
+
+  const url =
+    `https://identitytoolkit.googleapis.com/v1/projects/` +
+    `${encodeURIComponent(account.project_id)}/accounts:update`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      localId: uid,
+      password: newPassword,
+    }),
+  });
+
+  const body: unknown = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const apiError = body as {
+      error?: { message?: string };
+    } | null;
+
+    const message = apiError?.error?.message ?? "";
+
+    if (message.includes("USER_NOT_FOUND")) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    console.error("Managed-user password reset failed.", {
+      status: response.status,
+      message,
+    });
+
+    throw new Error("PASSWORD_RESET_FAILED");
+  }
+}
+
+
+
+export async function setManagedUserDisabled(
+  uid: string,
+  disabled: boolean
+): Promise<void> {
+  if (!uid) {
+    throw new Error("INVALID_USER_ID");
+  }
+
+  const account = await getServiceAccount();
+  const accessToken = await getGoogleAccessToken(account);
+
+  const url =
+    `https://identitytoolkit.googleapis.com/v1/projects/` +
+    `${encodeURIComponent(account.project_id)}/accounts:update`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      localId: uid,
+      disableUser: disabled,
+    }),
+  });
+
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    const apiError = body as {
+      error?: { message?: string };
+    } | null;
+
+    console.error("Firebase account status update failed.", {
+      status: response.status,
+      message: apiError?.error?.message,
+    });
+
+    throw new Error("ACCOUNT_STATUS_UPDATE_FAILED");
+  }
+}
+
+
+
+
+export async function deleteManagedFirebaseUser(
+  uid: string
+): Promise<void> {
+  if (!uid) {
+    throw new Error("INVALID_USER_ID");
+  }
+
+  const account = await getServiceAccount();
+  const accessToken = await getGoogleAccessToken(account);
+
+  const url =
+    `https://identitytoolkit.googleapis.com/v1/projects/` +
+    `${encodeURIComponent(account.project_id)}/accounts:delete`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      localId: uid,
+    }),
+  });
+
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    const apiError = body as {
+      error?: { message?: string };
+    } | null;
+
+    const message = apiError?.error?.message ?? "";
+
+    if (message.includes("USER_NOT_FOUND")) {
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    console.error("Firebase managed-user deletion failed.", {
+      status: response.status,
+      message,
+    });
+
+    throw new Error("USER_DELETE_FAILED");
+  }
+}
+
+
+
+
+
+
 export const adminAuth = {
   verifySessionCookie(
     sessionCookie: string,

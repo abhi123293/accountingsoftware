@@ -452,84 +452,114 @@ const [profileError, setProfileError] = useState("");
     setPasswordSuccess("");
   };
 
-  const handleChangePassword = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setPasswordError("");
-    setPasswordSuccess("");
 
-    if (!currentPassword) {
-      setPasswordError("Current password is required");
-      return;
-    }
-    if (!newPassword) {
-      setPasswordError("New password is required");
-      return;
-    }
-    if (newPassword.length !== 6) {
-      setPasswordError("Password must be exactly 6 characters");
-      return;
-    }
-    if (!/[A-Z]/.test(newPassword)) {
-      setPasswordError("Password must contain at least one uppercase letter");
-      return;
-    }
-    if (!/[0-9]/.test(newPassword)) {
-      setPasswordError("Password must contain at least one number");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordError("Passwords do not match");
-      return;
-    }
-    if (newPassword === currentPassword) {
-      setPasswordError("New password must be different from current password");
-      return;
-    }
-    if (!user?.email) {
-      setPasswordError("Unable to determine account email");
-      return;
-    }
-    if (!user.providerData.some((provider) => provider.providerId === "password")) {
-      setPasswordError(
-        "Your account uses a linked sign-in provider and has no password. Sign in with your provider instead."
-      );
-      return;
-    }
+const handleChangePassword = async (
+  event: React.FormEvent<HTMLFormElement>
+) => {
+  event.preventDefault();
+  setPasswordError("");
+  setPasswordSuccess("");
 
-    setChangingPassword(true);
-    try {
-      const credential = EmailAuthProvider.credential(user.email, currentPassword);
-      await reauthenticateWithCredential(user, credential);
-      await updatePassword(user, newPassword);
-      setPasswordSuccess("Password changed successfully.");
-      setTimeout(() => closePasswordDialog(), 1500);
-    } catch (error) {
-      const code = (error as AuthError)?.code;
-      switch (code) {
-        case "auth/wrong-password":
-        case "auth/invalid-credential":
-        case "auth/invalid-login-credentials":
-          setPasswordError("Current password is incorrect");
-          break;
-        case "auth/too-many-requests":
-          setPasswordError("Too many attempts. Please try again later");
-          break;
-        case "auth/weak-password":
-          setPasswordError("New password is too weak");
-          break;
-        case "auth/network-request-failed":
-          setPasswordError("Network error. Please check your connection and try again");
-          break;
-        case "auth/requires-recent-login":
-          setPasswordError("Session expired. Please sign in again and retry");
-          break;
-        default:
-          setPasswordError("Failed to change password. Please try again");
-      }
-    } finally {
-      setChangingPassword(false);
+  if (!currentPassword) {
+    setPasswordError("Current password is required.");
+    return;
+  }
+
+  if (!newPassword) {
+    setPasswordError("New password is required.");
+    return;
+  }
+
+  if (newPassword.length < 6) {
+    setPasswordError("Password must be at least 6 characters.");
+    return;
+  }
+
+  if (newPassword.length > 128) {
+    setPasswordError("Password cannot exceed 128 characters.");
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    setPasswordError("Passwords do not match.");
+    return;
+  }
+
+  if (newPassword === currentPassword) {
+    setPasswordError(
+      "New password must be different from the current password."
+    );
+    return;
+  }
+
+  if (!user?.email) {
+    setPasswordError("Unable to determine account email.");
+    return;
+  }
+
+  if (
+    !user.providerData.some(
+      (provider) => provider.providerId === "password"
+    )
+  ) {
+    setPasswordError(
+      "Your account has no email-and-password sign-in method."
+    );
+    return;
+  }
+
+  setChangingPassword(true);
+
+  try {
+    const credential = EmailAuthProvider.credential(
+      user.email,
+      currentPassword
+    );
+
+    await reauthenticateWithCredential(user, credential);
+    await updatePassword(user, newPassword);
+
+    setPasswordSuccess("Password changed successfully.");
+
+    setTimeout(() => closePasswordDialog(), 1500);
+  } catch (error) {
+    const code = (error as AuthError)?.code;
+
+    switch (code) {
+      case "auth/wrong-password":
+      case "auth/invalid-credential":
+      case "auth/invalid-login-credentials":
+        setPasswordError("Current password is incorrect.");
+        break;
+
+      case "auth/too-many-requests":
+        setPasswordError("Too many attempts. Please try again later.");
+        break;
+
+      case "auth/weak-password":
+        setPasswordError("This password is too weak.");
+        break;
+
+      case "auth/network-request-failed":
+        setPasswordError(
+          "Network error. Please check your connection and try again."
+        );
+        break;
+
+      case "auth/requires-recent-login":
+        setPasswordError(
+          "Your session has expired. Please sign in again and retry."
+        );
+        break;
+
+      default:
+        setPasswordError("Failed to change password. Please try again.");
     }
-  };
+  } finally {
+    setChangingPassword(false);
+  }
+};
+
 
   const closeDeleteDialog = () => {
     setDeleteOpen(false);
@@ -758,10 +788,20 @@ const [profileError, setProfileError] = useState("");
         credentials: "include",
       });
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Upload failed");
-      }
+    if (!response.ok) {
+  const errorData = await response.json().catch(() => null);
 
+  console.error("Logo upload API error:", {
+    status: response.status,
+    error: errorData,
+  });
+
+  throw new Error(
+    errorData?.error ||
+    errorData?.message ||
+    `Upload failed with status ${response.status}`
+  );
+}
       setLogoUrl(data.downloadURL);
       setLogoPath(data.path);
       setProfileMessage({
@@ -769,13 +809,18 @@ const [profileError, setProfileError] = useState("");
         text: "Logo uploaded. Click Save Changes to apply it.",
       });
     } catch (error) {
-      setProfileMessage({
-        type: "error",
-        text: error instanceof Error ? error.message : "Logo upload failed",
-      });
-    } finally {
-      setLogoUploading(false);
-    }
+  console.error("Logo upload failed:", error);
+
+  setProfileMessage({
+    type: "error",
+    text:
+      error instanceof Error
+        ? error.message
+        : "Logo upload failed. Check the server logs.",
+  });
+} finally {
+  setLogoUploading(false);
+}
   };
 
   const validateProfile = () => {
@@ -1637,95 +1682,89 @@ async function updateNotificationPreference(
                   </div>
                   <Separator />
                   <div className="flex items-center justify-between">
-                    <div>
-                      <Label>Compact Mode</Label>
-                      <p className="text-sm text-muted-foreground">Reduce spacing for denser information display</p>
-                    </div>
-                    <Switch />
+                  
+                    
                   </div>
                 </CardContent>
               </Card>
             </TabsContent>
 
             <TabsContent value="security" className="mt-6 space-y-6">
+
+              
+{isAdmin && (
+  <Card>
+    <CardHeader>
+      <CardTitle className="flex items-center gap-2">
+        <Shield className="h-5 w-5 text-primary" />
+        Security Overview
+      </CardTitle>
+      <CardDescription>
+        Review account protection and security controls for LedgerFlow.
+      </CardDescription>
+    </CardHeader>
+  </Card>
+)}
+
               <Card>
                 <CardHeader>
                   <CardTitle>Security</CardTitle>
                   <CardDescription>Manage your account security settings</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="flex items-center justify-between p-4 rounded-lg border border-border">
-                    <div className="flex items-center gap-3">
-                      <Key className="h-5 w-5 text-primary" />
-                      <div>
-                        <p className="font-medium text-foreground">Change Password</p>
-                        <p className="text-sm text-muted-foreground">
-                          Update the password for your account
-                        </p>
-                      </div>
-                    </div>
-                    <Button variant="outline" onClick={() => setPasswordOpen(true)}>
-                      Change Password
-                    </Button>
-                  </div>
+                 
+{isAdmin && (
+  <div className="flex items-center justify-between p-4 rounded-lg border border-border">
+    <div className="flex items-center gap-3">
+      <Key className="h-5 w-5 text-primary" />
+      <div>
+        <p className="font-medium text-foreground">Change Password</p>
+        <p className="text-sm text-muted-foreground">
+          Update the password for your account
+        </p>
+      </div>
+    </div>
+    <Button
+      variant="outline"
+      onClick={() => setPasswordOpen(true)}
+    >
+      Change Password
+    </Button>
+  </div>
+)}
+<Separator />
+
                   <Separator />
-                  <div className="flex items-center justify-between p-4 rounded-lg border border-border">
-                    <div className="flex items-center gap-3">
-                      <Check className="h-5 w-5 text-green-600" />
-                      <div>
-                        <p className="font-medium text-foreground">
-                          Authentication Status
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Signed in as {user?.email} ·{" "}
-                          {user?.providerData[0]?.providerId === "google.com"
-                            ? "Google"
-                            : "Email & password"}{" "}
-                          ·{" "}
-                          {user?.emailVerified
-                            ? "Email verified"
-                            : "Email not verified"}
-                        </p>
-                        {verificationMessage && (
-                          <p
-                            role={
-                              verificationMessage.type === "error"
-                                ? "alert"
-                                : "status"
-                            }
-                            className={
-                              verificationMessage.type === "error"
-                                ? "mt-1 text-xs text-orange-700"
-                                : "mt-1 text-xs text-green-700 dark:text-green-400"
-                            }
-                          >
-                            {verificationMessage.text}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {!user?.emailVerified && (
-                        <Button
-                          variant="outline"
-                          onClick={handleSendVerification}
-                          disabled={sendingVerification}
-                        >
-                          {sendingVerification ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Sending...
-                            </>
-                          ) : (
-                            "Verify Email"
-                          )}
-                        </Button>
-                      )}
-                      <span className="rounded-full border border-green-500/50 bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-700 dark:text-green-400">
-                        Authenticated
-                      </span>
-                    </div>
-                  </div>
+                 
+<div className="flex items-center justify-between p-4 rounded-lg border border-border">
+  <div className="flex items-center gap-3">
+    <Check className="h-5 w-5 text-green-600" />
+
+    <div>
+      <p className="font-medium text-foreground">
+        Authentication Status
+      </p>
+
+      <p className="text-sm text-muted-foreground">
+        Signed in as {user?.email ?? "Unknown account"} ·{" "}
+        {user?.providerData.some(
+          (provider) => provider.providerId === "google.com"
+        )
+          ? "Google"
+          : user?.providerData.some(
+                (provider) => provider.providerId === "password"
+              )
+            ? "Email & password"
+            : "Other sign-in method"}
+      </p>
+    </div>
+  </div>
+
+  <span className="rounded-full border border-green-500/50 bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-700 dark:text-green-400">
+    Authenticated
+  </span>
+</div>
+
                   <Separator />
                   <div className="flex items-center justify-between p-4 rounded-lg border border-border">
                     <div className="flex items-center gap-3">
@@ -1775,24 +1814,7 @@ async function updateNotificationPreference(
                     </Button>
                   </div>
                   <Separator />
-                  <div className="flex items-center justify-between p-4 rounded-lg border border-red-500/50 bg-red-500/10">
-                    <div className="flex items-center gap-3">
-                      <Shield className="h-5 w-5 text-red-600 dark:text-red-400" />
-                      <div>
-                        <p className="font-medium text-red-600 dark:text-red-400">Delete Account</p>
-                        <p className="text-sm text-red-600/80 dark:text-red-400/80">
-                          Permanently delete your account and all data
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      variant="destructive"
-                      className="bg-red-600 text-white hover:bg-red-700 dark:bg-red-600 dark:text-white dark:hover:bg-red-700"
-                      onClick={() => setDeleteOpen(true)}
-                    >
-                      Delete Account
-                    </Button>
-                  </div>
+                 
                 </CardContent>
               </Card>
 
@@ -1859,9 +1881,9 @@ async function updateNotificationPreference(
                         disabled={changingPassword}
                       />
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Exactly 6 characters, including an uppercase letter and a number.
-                    </p>
+                   <p className="text-xs text-muted-foreground">
+  Use at least 6 characters. Letters and numbers are both allowed.
+</p>
                     <DialogFooter>
                       <Button
                         type="button"

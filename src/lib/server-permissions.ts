@@ -73,8 +73,18 @@ export async function requirePermission(permission: PermissionKey): Promise<Curr
   return access;
 }
 
+
 export async function requireAdmin(): Promise<CurrentAccess> {
   const access = await getCurrentAccess();
-  if (!access.isAdmin) throw new Error("FORBIDDEN");
+
+  if (!access.isActive) {
+    throw new Error("FORBIDDEN");
+  }
+
+  if (!access.isAdmin) {
+    throw new Error("FORBIDDEN");
+  }
+
   return access;
 }
+
