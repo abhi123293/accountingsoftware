@@ -4552,12 +4552,12 @@ async function updateNotificationPreference(
     "Your account";
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <div className="hidden md:block">
-        <Sidebar />
-      </div>
+   <div className="min-h-screen bg-background text-foreground">
+  <div className="hidden md:block">
+    <Sidebar />
+  </div>
 
-      <main className="min-w-0 flex-1">
+  <main className="min-w-0 flex-1 md:ml-64">
         <Header />
 
         <div className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6 lg:p-8">

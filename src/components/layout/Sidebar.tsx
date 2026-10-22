@@ -33,7 +33,7 @@ export default function Sidebar() {
   const { isAdmin } = usePermissions();
 
   return (
-    <aside className="flex min-h-screen w-64 shrink-0 flex-col border-r border-border bg-card p-5">
+   <aside className="fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-y-auto border-r border-border bg-card p-5">
       <Link href="/dashboard" className="mb-10 flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
           <Wallet className="h-5 w-5" />
