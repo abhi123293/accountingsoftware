@@ -51,6 +51,18 @@ function handleError(error: unknown) {
   );
 }
 
+  if (
+    message === "INVALID_ISSUE_DATE" ||
+    message === "INVALID_INVOICE_FORMAT" ||
+    message === "INVALID_INVOICE_SEQUENCE"
+  ) {
+    return NextResponse.json(
+      { error: "Invalid invoice numbering settings or invoice date." },
+      { status: 400 }
+    );
+  }
+
+
   console.error("Invoices API error:", error);
 
   return NextResponse.json(
@@ -58,6 +70,88 @@ function handleError(error: unknown) {
     { status: 500 }
   );
 }
+
+
+
+async function createInvoiceWithNumber(
+  invoiceData: Record<string, unknown>,
+  issueDate: string
+): Promise<{ id: string; invoiceNumber: string }> {
+  const yearMatch = /^(\d{4})-\d{2}-\d{2}$/.exec(issueDate);
+
+  if (!yearMatch) {
+    throw new Error("INVALID_ISSUE_DATE");
+  }
+
+  const year = yearMatch[1];
+  const settingsRef = firestore.collection("settings").doc("accounting");
+
+  return firestore.runTransaction(async (transaction) => {
+    const settingsSnapshot = await transaction.get(settingsRef);
+    const settings = settingsSnapshot.data();
+
+    const configuredFormat =
+      typeof settings.invoiceFormat === "string"
+        ? settings.invoiceFormat
+        : "INV-{YYYY}-{SEQ}";
+
+    if (
+      configuredFormat.length > 50 ||
+      !configuredFormat.includes("{SEQ}") ||
+      !/^[A-Za-z0-9_{}-]+$/.test(configuredFormat) ||
+      /\{(?!YYYY\}|SEQ\})[^{}]*\}/.test(configuredFormat)
+    ) {
+      throw new Error("INVALID_INVOICE_FORMAT");
+    }
+
+    const counterKey = configuredFormat.includes("{YYYY}")
+      ? year
+      : "global";
+
+    const counterRef = firestore
+      .collection("invoiceSequences")
+      .doc(counterKey);
+
+    const counterSnapshot = await transaction.get(counterRef);
+
+    const previousSequence = counterSnapshot.exists
+      ? Number(counterSnapshot.data().lastSequence ?? 0)
+      : 0;
+
+    if (
+      !Number.isSafeInteger(previousSequence) ||
+      previousSequence < 0 ||
+      previousSequence >= Number.MAX_SAFE_INTEGER
+    ) {
+      throw new Error("INVALID_INVOICE_SEQUENCE");
+    }
+
+    const nextSequence = previousSequence + 1;
+
+    const invoiceNumber = configuredFormat
+      .replaceAll("{YYYY}", year)
+      .replaceAll("{SEQ}", String(nextSequence).padStart(4, "0"));
+
+    const invoiceRef = firestore.collection("invoices").doc();
+
+    transaction.set(counterRef, {
+      lastSequence: nextSequence,
+      updatedAt: new Date().toISOString(),
+    });
+
+    transaction.set(invoiceRef, {
+      ...invoiceData,
+      invoiceNumber,
+    });
+
+    return {
+      id: invoiceRef.id,
+      invoiceNumber,
+    };
+  });
+}
+
+
 
 export async function GET() {
   try {
@@ -230,11 +324,7 @@ const totals = calculateInvoiceTotals(
 );
 
 
-    const invoiceNumber =
-      `INV-${Date.now()}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
-
-    const invoiceData = {
-  invoiceNumber,
+const invoiceData: Record<string, unknown> = {
   customerId,
   customerName: String(customer.name ?? ""),
   issueDate,
@@ -244,40 +334,43 @@ const totals = calculateInvoiceTotals(
   taxRate,
   tax: totals.tax,
   total: totals.total,
-
   taxSettingsSnapshot: {
     pricingMode: taxSettings.pricingMode,
     taxSummary: taxSettings.taxSummary,
     enabledTaxes: taxSettings.enabledTaxes,
   },
-
   status: "draft",
   amountPaid: 0,
   balanceDue: totals.total,
   createdAt: new Date().toISOString(),
 };
 
-    const document = await firestore
-      .collection("invoices")
-      .add(invoiceData);
-      
-      await createNotification({
+const createdInvoice = await createInvoiceWithNumber(
+  invoiceData,
+  issueDate
+);
+
+await createNotification({
   title: "Invoice created",
-  message: `${invoiceNumber} was created for ${String(customer.name ?? "customer")}.`,
+  message: `${createdInvoice.invoiceNumber} was created for ${String(
+    customer.name ?? "customer"
+  )}.`,
   type: "invoice_created",
   link: "/invoices",
-  entityId: document.id,
+  entityId: createdInvoice.id,
 });
 
-    return NextResponse.json(
-      {
-        invoice: {
-          id: document.id,
-          ...invoiceData,
-        },
-      },
-      { status: 201 }
-    );
+return NextResponse.json(
+  {
+    invoice: {
+      id: createdInvoice.id,
+      ...invoiceData,
+      invoiceNumber: createdInvoice.invoiceNumber,
+    },
+  },
+  { status: 201 }
+);
+
   } catch (error) {
     return handleError(error);
   }

@@ -3,7 +3,11 @@ import { cookies } from "next/headers";
 import { adminAuth } from "@/lib/firebase-admin-auth";
 import { firestore } from "@/lib/firestore-rest";
 import { isAdminUid } from "@/lib/admin-uid";
-
+import {
+  getCurrentAccess,
+  requireAdmin,
+  requirePermission,
+} from "@/lib/server-permissions";
 const DATE_FORMATS = ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", "DD-MM-YYYY"] as const;
 const PAYMENT_TERMS = [
   "due_receipt",
@@ -14,22 +18,22 @@ const PAYMENT_TERMS = [
   "net_60",
 ] as const;
 
-async function verifyAdmin() {
-  if (!adminAuth) {
-    throw new Error("ADMIN_NOT_CONFIGURED");
-  }
+// async function verifyAdmin() {
+//   if (!adminAuth) {
+//     throw new Error("ADMIN_NOT_CONFIGURED");
+//   }
 
-  const cookieStore = await cookies();
-  const session = cookieStore.get("__session")?.value;
+//   const cookieStore = await cookies();
+//   const session = cookieStore.get("__session")?.value;
 
-  if (!session) throw new Error("UNAUTHORIZED");
+//   if (!session) throw new Error("UNAUTHORIZED");
 
-  const decoded = await adminAuth.verifySessionCookie(session, true);
+//   const decoded = await adminAuth.verifySessionCookie(session, true);
 
-  if (!(await isAdminUid(decoded.uid))) {
-    throw new Error("FORBIDDEN");
-  }
-}
+//   if (!(await isAdminUid(decoded.uid))) {
+//     throw new Error("FORBIDDEN");
+//   }
+// }
 
 function handleError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
@@ -48,6 +52,13 @@ function handleError(error: unknown) {
     );
   }
 
+  if (message === "ADMIN_NOT_CONFIGURED") {
+  return NextResponse.json(
+    { error: "Authentication service is not configured." },
+    { status: 503 }
+  );
+}
+
   console.error("Accounting preferences API error:", error);
 
   return NextResponse.json(
@@ -62,10 +73,13 @@ const settingsDoc = () => {
 
 export async function GET() {
   try {
-    await verifyAdmin();
+    const access = await getCurrentAccess();
 
-    const ref = settingsDoc();
-    const snapshot = await ref.get();
+    if (!access.isAdmin) {
+      await requirePermission("invoices.create");
+    }
+
+    const snapshot = await settingsDoc().get();
 
     return NextResponse.json({
       settings: snapshot.exists ? snapshot.data() : {},
@@ -77,7 +91,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    await verifyAdmin();
+   await requireAdmin();
 
     const ref = settingsDoc();
     const body = await request.json().catch(() => null);

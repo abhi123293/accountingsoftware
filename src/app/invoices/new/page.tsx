@@ -37,6 +37,38 @@ type TaxSettings = {
   enabledTaxes: string[];
 };
 
+type AccountingSettings = {
+  baseCurrency: string;
+  fyStartDate: string;
+  dateFormat: string;
+  paymentTerms: string;
+  invoiceFormat: string;
+  defaultSalesAccount: string;
+  defaultExpenseAccount: string;
+};
+
+const PAYMENT_TERM_DAYS: Record<string, number> = {
+  due_receipt: 0,
+  net_7: 7,
+  net_15: 15,
+  net_30: 30,
+  net_45: 45,
+  net_60: 60,
+};
+
+function addDaysToDate(dateString: string, days: number): string {
+  const [year, month, day] = dateString.split("-").map(Number);
+
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + days);
+
+  const resultYear = date.getFullYear();
+  const resultMonth = String(date.getMonth() + 1).padStart(2, "0");
+  const resultDay = String(date.getDate()).padStart(2, "0");
+
+  return `${resultYear}-${resultMonth}-${resultDay}`;
+}
+
 const today = () => {
   const date = new Date();
   const year = date.getFullYear();
@@ -45,11 +77,7 @@ const today = () => {
   return `${year}-${month}-${day}`;
 };
 
-const money = (amount: number) =>
-  new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-  }).format(amount);
+
 
 function NewInvoicePage() {
   const { loading: authLoading } = useRequireAuth();
@@ -76,12 +104,36 @@ const [taxSettings, setTaxSettings] = useState<TaxSettings>({
   enabledTaxes: [],
 });
 
+const [accountingSettings, setAccountingSettings] =
+  useState<AccountingSettings>({
+    baseCurrency: "INR",
+    fyStartDate: "04-01",
+    dateFormat: "DD/MM/YYYY",
+    paymentTerms: "net_30",
+    invoiceFormat: "INV-{YYYY}-{SEQ}",
+    defaultSalesAccount: "",
+    defaultExpenseAccount: "",
+  });
+
+
+const [accountingSettingsLoading, setAccountingSettingsLoading] =
+  useState(true);
+
 const [taxSettingsLoading, setTaxSettingsLoading] = useState(true);
   const [items, setItems] = useState<InvoiceItem[]>([
     { description: "", quantity: 1, unitPrice: 0 },
   ]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  const money = (amount: number) => {
+  const currency = accountingSettings.baseCurrency || "INR";
+
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency,
+  }).format(amount);
+};
 
  useEffect(() => {
   if (authLoading) return;
@@ -243,6 +295,74 @@ useEffect(() => {
   };
 }, [authLoading, editId]);
 
+
+useEffect(() => {
+  if (authLoading) return;
+
+  let cancelled = false;
+
+  async function loadAccountingSettings() {
+    try {
+      const response = await fetch("/api/accounting-preferences");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Unable to load accounting preferences."
+        );
+      }
+
+      if (cancelled) return;
+
+      const settings = data.settings ?? {};
+
+      setAccountingSettings((current) => ({
+        ...current,
+        ...settings,
+      }));
+    } catch (err) {
+      if (!cancelled) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load accounting preferences."
+        );
+      }
+    } finally {
+      if (!cancelled) {
+        setAccountingSettingsLoading(false);
+      }
+    }
+  }
+
+  void loadAccountingSettings();
+
+  return () => {
+    cancelled = true;
+  };
+}, [authLoading]);
+
+
+useEffect(() => {
+  if (
+    authLoading ||
+    accountingSettingsLoading ||
+    isEditing
+  ) {
+    return;
+  }
+
+  const days =
+    PAYMENT_TERM_DAYS[accountingSettings.paymentTerms] ?? 30;
+
+  setDueDate(addDaysToDate(issueDate, days));
+}, [
+  authLoading,
+  accountingSettingsLoading,
+  accountingSettings.paymentTerms,
+  isEditing,
+  issueDate,
+]);
  const enteredSubtotal = items.reduce(
   (sum, item) =>
     sum +
@@ -503,7 +623,8 @@ return (
                     <tr>
                       <th className="px-4 py-3 font-medium">Description</th>
                       <th className="px-4 py-3 font-medium">Quantity</th>
-                      <th className="px-4 py-3 font-medium">Unit Price (₹)</th>
+                     <th className="px-4 py-3 font-medium">
+  Unit Price ({accountingSettings.baseCurrency || "INR"})</th>
                       <th className="px-4 py-3 text-right font-medium">Amount</th>
                       <th className="px-4 py-3" />
                     </tr>
@@ -633,10 +754,11 @@ return (
 
               <Button
                 type="submit"
-               disabled={
+              disabled={
   saving ||
   customersLoading ||
   taxSettingsLoading ||
+  accountingSettingsLoading ||
   customers.length === 0
 }
               >
